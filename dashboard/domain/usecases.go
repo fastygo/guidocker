@@ -13,6 +13,20 @@ type DashboardUseCase interface {
 	GetContainerByID(ctx context.Context, id string) (*Container, error)
 }
 
+// AppUseCase defines app lifecycle management operations.
+type AppUseCase interface {
+	CreateApp(ctx context.Context, name, composeYAML string) (*App, error)
+	UpdateApp(ctx context.Context, id, name, composeYAML string) (*App, error)
+	DeleteApp(ctx context.Context, id string) error
+	GetApp(ctx context.Context, id string) (*App, error)
+	ListApps(ctx context.Context) ([]*App, error)
+	DeployApp(ctx context.Context, id string) error
+	StopApp(ctx context.Context, id string) error
+	RestartApp(ctx context.Context, id string) error
+	GetAppStatus(ctx context.Context, id string) (string, error)
+	GetAppLogs(ctx context.Context, id string, lines int) (string, error)
+}
+
 // DashboardService implements DashboardUseCase
 type DashboardService struct {
 	repository DashboardRepository

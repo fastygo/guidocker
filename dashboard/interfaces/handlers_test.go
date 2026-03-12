@@ -19,6 +19,19 @@ type fakeDashboardUseCase struct {
 	updateFn func(context.Context, string, string) error
 }
 
+type fakeAppUseCase struct {
+	createFn    func(context.Context, string, string) (*domain.App, error)
+	updateFn    func(context.Context, string, string, string) (*domain.App, error)
+	deleteFn    func(context.Context, string) error
+	getFn       func(context.Context, string) (*domain.App, error)
+	listFn      func(context.Context) ([]*domain.App, error)
+	deployFn    func(context.Context, string) error
+	stopFn      func(context.Context, string) error
+	restartFn   func(context.Context, string) error
+	getStatusFn func(context.Context, string) (string, error)
+	getLogsFn   func(context.Context, string, int) (string, error)
+}
+
 func (m *fakeDashboardUseCase) GetDashboardData(ctx context.Context) (*domain.DashboardData, error) {
 	if m.getErr != nil {
 		return nil, m.getErr
@@ -46,6 +59,76 @@ func (m *fakeDashboardUseCase) GetContainerByID(ctx context.Context, id string) 
 		}
 	}
 	return nil, domain.ErrContainerNotFound
+}
+
+func (m *fakeAppUseCase) CreateApp(ctx context.Context, name, composeYAML string) (*domain.App, error) {
+	if m.createFn != nil {
+		return m.createFn(ctx, name, composeYAML)
+	}
+	return nil, nil
+}
+
+func (m *fakeAppUseCase) UpdateApp(ctx context.Context, id, name, composeYAML string) (*domain.App, error) {
+	if m.updateFn != nil {
+		return m.updateFn(ctx, id, name, composeYAML)
+	}
+	return nil, nil
+}
+
+func (m *fakeAppUseCase) DeleteApp(ctx context.Context, id string) error {
+	if m.deleteFn != nil {
+		return m.deleteFn(ctx, id)
+	}
+	return nil
+}
+
+func (m *fakeAppUseCase) GetApp(ctx context.Context, id string) (*domain.App, error) {
+	if m.getFn != nil {
+		return m.getFn(ctx, id)
+	}
+	return nil, domain.ErrAppNotFound
+}
+
+func (m *fakeAppUseCase) ListApps(ctx context.Context) ([]*domain.App, error) {
+	if m.listFn != nil {
+		return m.listFn(ctx)
+	}
+	return nil, nil
+}
+
+func (m *fakeAppUseCase) DeployApp(ctx context.Context, id string) error {
+	if m.deployFn != nil {
+		return m.deployFn(ctx, id)
+	}
+	return nil
+}
+
+func (m *fakeAppUseCase) StopApp(ctx context.Context, id string) error {
+	if m.stopFn != nil {
+		return m.stopFn(ctx, id)
+	}
+	return nil
+}
+
+func (m *fakeAppUseCase) RestartApp(ctx context.Context, id string) error {
+	if m.restartFn != nil {
+		return m.restartFn(ctx, id)
+	}
+	return nil
+}
+
+func (m *fakeAppUseCase) GetAppStatus(ctx context.Context, id string) (string, error) {
+	if m.getStatusFn != nil {
+		return m.getStatusFn(ctx, id)
+	}
+	return domain.AppStatusRunning, nil
+}
+
+func (m *fakeAppUseCase) GetAppLogs(ctx context.Context, id string, lines int) (string, error) {
+	if m.getLogsFn != nil {
+		return m.getLogsFn(ctx, id, lines)
+	}
+	return "", nil
 }
 
 func TestDashboardHandler_Dashboard_RendersHTML(t *testing.T) {
@@ -283,5 +366,91 @@ func TestDashboardHandler_APIUpdateContainer_NotFound(t *testing.T) {
 
 	if recorder.Result().StatusCode != http.StatusNotFound {
 		t.Fatalf("expected status 404, got %d", recorder.Result().StatusCode)
+	}
+}
+
+func TestDashboardHandler_LoginScreen(t *testing.T) {
+	handler := NewDashboardHandler(&fakeDashboardUseCase{})
+	request := httptest.NewRequest(http.MethodGet, "/login", nil)
+	recorder := httptest.NewRecorder()
+
+	handler.Login(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", recorder.Result().StatusCode)
+	}
+	if !strings.Contains(recorder.Body.String(), "Sign in") {
+		t.Fatalf("expected login screen to contain sign in text")
+	}
+}
+
+func TestDashboardHandler_APIApps_Create(t *testing.T) {
+	handler := NewDashboardHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{
+		createFn: func(_ context.Context, name, composeYAML string) (*domain.App, error) {
+			if name != "demo" {
+				t.Fatalf("expected name demo, got %q", name)
+			}
+			if !strings.Contains(composeYAML, "services:") {
+				t.Fatalf("expected compose payload to contain services section")
+			}
+			return &domain.App{ID: "app-1", Name: name, ComposeYAML: composeYAML, Status: domain.AppStatusCreated}, nil
+		},
+	})
+
+	body := bytes.NewBufferString(`{"name":"demo","compose_yaml":"services:\n  web:\n    image: nginx:alpine"}`)
+	request := httptest.NewRequest(http.MethodPost, "/api/apps", body)
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	handler.APIApps(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", recorder.Result().StatusCode)
+	}
+
+	var payload domain.App
+	if err := json.NewDecoder(recorder.Body).Decode(&payload); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if payload.ID != "app-1" {
+		t.Fatalf("expected app id app-1, got %q", payload.ID)
+	}
+}
+
+func TestDashboardHandler_APIDeploy_Success(t *testing.T) {
+	deployedID := ""
+	handler := NewDashboardHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{
+		deployFn: func(_ context.Context, id string) error {
+			deployedID = id
+			return nil
+		},
+		getStatusFn: func(context.Context, string) (string, error) {
+			return domain.AppStatusRunning, nil
+		},
+	})
+
+	request := httptest.NewRequest(http.MethodPost, "/api/apps/app-1/deploy", nil)
+	recorder := httptest.NewRecorder()
+
+	handler.APIAppRoutes(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", recorder.Result().StatusCode)
+	}
+	if deployedID != "app-1" {
+		t.Fatalf("expected deploy for app-1, got %q", deployedID)
+	}
+
+	var payload map[string]any
+	if err := json.NewDecoder(recorder.Body).Decode(&payload); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if payload["success"] != true {
+		t.Fatalf("expected success=true, got %+v", payload)
+	}
+	if payload["status"] != domain.AppStatusRunning {
+		t.Fatalf("expected running status, got %+v", payload["status"])
 	}
 }

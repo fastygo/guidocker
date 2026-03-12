@@ -1,205 +1,221 @@
-# Docker Container Dashboard
+# PaaS Dashboard MVP
 
-Простой дашборд для мониторинга Docker контейнеров с использованием Clean Architecture и инлайн стилей на базе Tailwind CSS классов.
+Лёгкий PaaS-сервис на Go для управления приложениями через Docker Compose:
+
+- HTTP Basic Auth + login screen
+- BoltDB-хранилище метаданных приложений
+- deploy/stop/restart/logs через `docker compose`
+- браузерные экраны: Overview, Apps, Compose, Logs
+- fallback на старый JSON dashboard для совместимости
 
 ## Архитектура
 
-Проект реализован по принципам Clean Architecture:
-
-```
+```text
 dashboard/
-├── domain/           # Бизнес-логика (Entities, Use Cases)
-│   ├── entities.go   # Доменные объекты
-│   └── usecases.go   # Бизнес-правила
-├── infrastructure/   # Внешние интерфейсы
-│   └── repository.go # Доступ к данным
-├── interfaces/       # Адаптеры интерфейсов
-│   └── handlers.go   # HTTP обработчики
-├── pkg/twsx/         # Утилиты для стилей
-│   └── twsx.go       # Конвертер Tailwind классов
-├── config/           # Конфигурация
-│   └── config.go     # Настройки приложения
-├── data/             # Статические данные
-│   └── dashboard.json # JSON данные дашборда
-├── main.go           # Точка входа
-└── go.mod            # Go модули
+├── config/                    # ENV configuration
+├── domain/                    # Entities, errors, interfaces
+├── infrastructure/
+│   ├── bolt/                  # App repository over BoltDB
+│   ├── docker/                # Docker CLI adapter
+│   └── repository.go          # Legacy JSON dashboard repository
+├── interfaces/
+│   ├── middleware/            # Basic Auth + session login
+│   ├── handlers.go            # Legacy dashboard handlers
+│   └── paas_handlers.go       # PaaS pages + API
+├── usecase/app/               # App lifecycle service
+├── data/                      # Legacy dashboard seed data
+└── main.go                    # Server wiring
 ```
 
-## Особенности
+## Что умеет MVP
 
-- ✅ **Clean Architecture**: Разделение ответственности по слоям
-- ✅ **Семантические CSS классы**: Чистый HTML5 с объединенными стилями в head
-- ✅ **Минифицированные стили**: CSS (3407 chars) и JavaScript (279 chars) без пробелов
-- ✅ **Автоматический выбор порта**: Умное определение свободного порта (дефолт 3000)
-- ✅ **Graceful shutdown**: Правильное завершение работы по сигналам ОС
-- ✅ **Tailwind-like синтаксис**: Использование знакомых классов без внешних файлов
-- ✅ **JSON данные**: Шаблоны полностью отделены от данных
-- ✅ **REST API**: Полноценное API для работы с данными
-- ✅ **Автоматическая генерация CSS**: Стили собираются в head секции
-- ✅ **Стандартная библиотека**: Минимум зависимостей
+- создавать приложение по `docker-compose.yml`
+- хранить метаданные в BoltDB
+- сохранять compose-стек в `STACKS_DIR/<app-id>/docker-compose.yml`
+- запускать `docker compose up -d`, `down`, `restart`
+- отдавать логи через API
+- отображать статус приложения в UI
 
-## Запуск
+## Требования к серверу
+
+### Ubuntu / Debian setup
 
 ```bash
-# Сборка
-go build
+sudo apt-get update
+sudo apt-get install -y docker.io docker-compose-plugin nginx
 
-# Запуск
+# Если docker compose plugin недоступен в репозитории:
+sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" \
+  -o /usr/local/bin/docker-compose
+sudo chmod +x /usr/local/bin/docker-compose
+
+sudo usermod -aG docker "$USER"
+sudo mkdir -p /opt/stacks
+sudo chown -R "$USER:$USER" /opt/stacks
+```
+
+После изменения группы `docker` перелогиньтесь или выполните:
+
+```bash
+newgrp docker
+```
+
+## Сборка и локальный запуск
+
+```bash
+cd dashboard
+go test ./...
+go build -o dashboard .
+
+PAAS_ADMIN_USER=admin \
+PAAS_ADMIN_PASS=admin@123 \
+PAAS_PORT=3000 \
+STACKS_DIR=/opt/stacks \
+BOLT_DB_FILE=/opt/stacks/.paas.db \
 ./dashboard
-
-# Или сразу
-go run main.go
 ```
 
-Сервер запустится на `http://localhost:3000` (или автоматически выберет свободный порт)
+После запуска:
 
-## API Endpoints
-
-### Web интерфейс
-- `GET /` - Главная страница дашборда
-
-### API
-- `GET /api/dashboard` - Получить все данные дашборда
-- `PUT /api/containers/{id}` - Обновить статус контейнера
-
-### Пример API запроса
-
-```bash
-# Получить данные
-curl http://localhost:8080/api/dashboard
-
-# Обновить статус контейнера
-curl -X PUT http://localhost:8080/api/containers/web-app-01 \
-  -H "Content-Type: application/json" \
-  -d '{"status": "stopped"}'
-```
-
-## Структура данных
-
-Данные хранятся в `data/dashboard.json`:
-
-```json
-{
-  "title": "Docker Container Dashboard",
-  "subtitle": "Real-time container monitoring",
-  "stats": {
-    "total_containers": 12,
-    "running_containers": 8,
-    "stopped_containers": 3,
-    "paused_containers": 1
-  },
-  "containers": [
-    {
-      "id": "web-app-01",
-      "name": "nginx-web",
-      "image": "nginx:alpine",
-      "status": "running",
-      "ports": ["80:80", "443:443"],
-      "cpu_usage": 15.2,
-      "memory_usage": 45.8
-    }
-  ],
-  "system": {
-    "cpu_cores": 4,
-    "total_memory": 8192,
-    "used_memory": 3456,
-    "disk_usage": 2341
-  }
-}
-```
-
-## Система семантических стилей
-
-Проект использует усовершенствованную систему стилей `twsx` с семантическими классами:
-
-### Регистрация стилей
-
-```go
-// Создание реестра стилей
-registry := twsx.NewStyleRegistry()
-
-// Регистрация семантических классов
-registry.CLASS("card", twsx.TWSX("bg-white rounded-lg shadow p-6"))
-registry.CLASS("btn-primary", twsx.TWSX("bg-blue-600 text-white px-4 py-2 rounded"))
-```
-
-### Генерация CSS
-
-```go
-// Получение минифицированных CSS правил (без пробелов и переносов)
-css := registry.GenerateCSS()
-// Результат: ".body{background-color:#f9fafb;font-family:system-ui, sans-serif;min-height:100vh}..."
-```
-
-### Использование в HTML
-
-```html
-<div class="card">
-    <button class="btn-primary">Click me</button>
-</div>
-```
-
-### Преимущества подхода
-
-- **Чистый HTML**: Семантические классы вместо инлайн стилей
-- **Объединенные стили**: Все CSS в head секции, без дублирования
-- **Кеширование**: Стили генерируются один раз при рендере страницы
-- **Tailwind синтаксис**: Знакомые классы для быстрой разработки
+- UI: `http://localhost:3000`
+- Login: `http://localhost:3000/login`
 
 ## Конфигурация
 
-Приложение использует переменные окружения:
+### Основные переменные окружения
 
-- `SERVER_HOST` - Хост сервера (по умолчанию: localhost)
-- `SERVER_PORT` - Порт сервера (по умолчанию: 8080)
-- `DASHBOARD_DATA_FILE` - Путь к JSON файлу данных (по умолчанию: data/dashboard.json)
+| Variable | Default | Description |
+| --- | --- | --- |
+| `SERVER_HOST` | `localhost` | Host for HTTP server |
+| `PAAS_PORT` | `3000` | Main server port |
+| `SERVER_PORT` | `3000` | Legacy fallback port variable |
+| `PAAS_ADMIN_USER` | `admin` | Login username |
+| `PAAS_ADMIN_PASS` | `admin@123` | Login password |
+| `STACKS_DIR` | `/opt/stacks` | Base directory for compose stacks |
+| `BOLT_DB_FILE` | `/opt/stacks/.paas.db` | BoltDB file |
+| `DASHBOARD_DATA_FILE` | `data/dashboard.json` | Legacy JSON dashboard source |
+
+## Основные роуты
+
+### Web UI
+
+- `GET /` — overview
+- `GET /login` — login screen
+- `GET /apps` — список приложений
+- `GET /apps/new` — создание приложения
+- `GET /apps/{id}` — карточка приложения
+- `GET /apps/{id}/compose` — редактор compose
+- `GET /apps/{id}/logs` — просмотр логов
+
+### API
+
+- `GET /api/dashboard`
+- `GET /api/apps`
+- `POST /api/apps`
+- `GET /api/apps/{id}`
+- `PUT /api/apps/{id}`
+- `DELETE /api/apps/{id}`
+- `POST /api/apps/{id}/deploy`
+- `POST /api/apps/{id}/stop`
+- `POST /api/apps/{id}/restart`
+- `GET /api/apps/{id}/logs?lines=100`
+
+### Пример API
 
 ```bash
-# Изменить порт (дефолтный 3000 с умным авто-выбором)
-SERVER_PORT=8080 ./dashboard
+curl -u admin:admin@123 http://localhost:3000/api/apps
 
-# Примеры вывода логов:
-# 🚀 Starting Dashboard Server...
-# 📡 Server URL: http://localhost:3000
-# 📊 Data source: data/dashboard.json
-# ⚠️  Port 3000 failed, trying alternative port...
-# ✅ Found free port: 3001 ✓ Using alternative port
-# 💡 Server ready! Press Ctrl+C to stop gracefully
+curl -u admin:admin@123 \
+  -X POST http://localhost:3000/api/apps \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "demo-nginx",
+    "compose_yaml": "version: \"3.9\"\nservices:\n  web:\n    image: nginx:alpine\n    ports:\n      - \"8080:80\""
+  }'
 
-# Использовать кастомный файл данных
-DASHBOARD_DATA_FILE=custom/data.json ./dashboard
-
-# Комбинированные настройки
-SERVER_HOST=0.0.0.0 SERVER_PORT=9090 DASHBOARD_DATA_FILE=prod/data.json ./dashboard
-
-# Graceful shutdown работает автоматически по Ctrl+C
-# Примеры логов завершения:
-# 🛑 Received shutdown signal...
-# ⏳ Gracefully shutting down server (5s timeout)
-# ✅ Server shutdown completed successfully
-# 👋 Goodbye!
+curl -u admin:admin@123 \
+  -X POST http://localhost:3000/api/apps/demo-id/deploy
 ```
 
-## Разработка
+## Production Setup
 
-### Добавление новых стилей
+### systemd unit
 
-1. Добавьте Tailwind классы в `pkg/twsx/twsx.go`
-2. Используйте в шаблонах через `twsx.TWSX()` и `twsx.StylesToInlineCSS()`
+```ini
+# /etc/systemd/system/paas.service
+[Unit]
+Description=PaaS Dashboard
+After=network.target docker.service
+Requires=docker.service
 
-### Добавление новых API endpoints
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/paas
+Environment=PAAS_ADMIN_USER=admin
+Environment=PAAS_ADMIN_PASS=admin@123
+Environment=PAAS_PORT=3000
+Environment=STACKS_DIR=/opt/stacks
+Environment=BOLT_DB_FILE=/opt/stacks/.paas.db
+ExecStart=/opt/paas/dashboard
+Restart=always
+RestartSec=5
 
-1. Добавьте метод в `domain/usecases.go`
-2. Реализуйте обработчик в `interfaces/handlers.go`
-3. Зарегистрируйте маршрут в `main.go`
+[Install]
+WantedBy=multi-user.target
+```
 
-### Добавление новых данных
+Применить:
 
-Обновите структуру в `domain/entities.go` и JSON файл в `data/dashboard.json`.
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable paas
+sudo systemctl start paas
+sudo systemctl status paas
+```
 
-## Производительность
+### nginx reverse proxy
 
-- Используется стандартная библиотека Go (net/http)
-- Инлайн стили исключают дополнительные HTTP запросы
-- JSON данные кешируются в памяти
-- Clean Architecture обеспечивает легкость тестирования и модификации
+```nginx
+# /etc/nginx/sites-enabled/paas
+server {
+    listen 80;
+    server_name _;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+Применить:
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+## Тесты
+
+```bash
+go test ./...
+```
+
+Покрыты ключевые сценарии:
+
+- config loading
+- app use case lifecycle
+- Bolt repository CRUD
+- handlers: login, create app, deploy
+
+## Ограничения MVP
+
+- без автоматической генерации nginx-конфигов под каждое приложение
+- без wildcard SSL / Let's Encrypt
+- без multi-user / RBAC
+- без фоновой синхронизации состояния контейнеров

@@ -4,15 +4,17 @@ import (
 	"dashboard/domain"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
-	"fmt"
 )
 
 // DashboardHandler handles HTTP requests for dashboard
 type DashboardHandler struct {
 	dashboardUseCase domain.DashboardUseCase
+	appUseCase       domain.AppUseCase
+	loginHandler     http.HandlerFunc
 }
 
 // NewDashboardHandler creates a new dashboard handler
@@ -20,6 +22,16 @@ func NewDashboardHandler(useCase domain.DashboardUseCase) *DashboardHandler {
 	return &DashboardHandler{
 		dashboardUseCase: useCase,
 	}
+}
+
+// SetAppUseCase attaches the app lifecycle use case to the handler.
+func (h *DashboardHandler) SetAppUseCase(useCase domain.AppUseCase) {
+	h.appUseCase = useCase
+}
+
+// SetLoginHandler attaches a dedicated login handler.
+func (h *DashboardHandler) SetLoginHandler(handler http.HandlerFunc) {
+	h.loginHandler = handler
 }
 
 // Dashboard serves the main dashboard page
@@ -46,7 +58,7 @@ func (h *DashboardHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *DashboardHandler) handleOverview(w http.ResponseWriter, r *http.Request) {
-	dashboardData, err := h.dashboardUseCase.GetDashboardData(r.Context())
+	dashboardData, err := h.loadDashboardData(r.Context())
 	if err != nil {
 		log.Printf("Failed to get dashboard data: %v", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -59,7 +71,21 @@ func (h *DashboardHandler) handleOverview(w http.ResponseWriter, r *http.Request
 }
 
 func (h *DashboardHandler) handleApps(w http.ResponseWriter, r *http.Request) {
-	dashboardData, err := h.dashboardUseCase.GetDashboardData(r.Context())
+	if h.appUseCase != nil {
+		apps, err := h.appUseCase.ListApps(r.Context())
+		if err != nil {
+			log.Printf("Failed to get apps: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+
+		html := h.renderAppsPage(apps)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte(html))
+		return
+	}
+
+	dashboardData, err := h.loadDashboardData(r.Context())
 	if err != nil {
 		log.Printf("Failed to get dashboard data: %v", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -118,6 +144,20 @@ func (h *DashboardHandler) handleAppDetail(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	if h.appUseCase != nil {
+		app, err := h.appUseCase.GetApp(r.Context(), id)
+		if err != nil {
+			log.Printf("Failed to load app %s: %v", id, err)
+			http.NotFound(w, r)
+			return
+		}
+
+		html := h.renderAppDetailPage(app)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte(html))
+		return
+	}
+
 	container, err := h.dashboardUseCase.GetContainerByID(r.Context(), id)
 	if err != nil {
 		log.Printf("Failed to load app %s: %v", id, err)
@@ -131,6 +171,13 @@ func (h *DashboardHandler) handleAppDetail(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *DashboardHandler) handleComposeCreate(w http.ResponseWriter, r *http.Request) {
+	if h.appUseCase != nil {
+		html := h.renderComposePage(nil)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte(html))
+		return
+	}
+
 	html := h.renderComposeScreen(nil)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write([]byte(html))
@@ -139,6 +186,20 @@ func (h *DashboardHandler) handleComposeCreate(w http.ResponseWriter, r *http.Re
 func (h *DashboardHandler) handleComposeEdit(w http.ResponseWriter, r *http.Request, id string) {
 	if id == "" {
 		http.Redirect(w, r, "/apps/new", http.StatusSeeOther)
+		return
+	}
+
+	if h.appUseCase != nil {
+		app, err := h.appUseCase.GetApp(r.Context(), id)
+		if err != nil {
+			log.Printf("Failed to load app %s: %v", id, err)
+			http.NotFound(w, r)
+			return
+		}
+
+		html := h.renderComposePage(app)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte(html))
 		return
 	}
 
@@ -157,6 +218,20 @@ func (h *DashboardHandler) handleComposeEdit(w http.ResponseWriter, r *http.Requ
 func (h *DashboardHandler) handleAppLogs(w http.ResponseWriter, r *http.Request, id string) {
 	if id == "" {
 		http.NotFound(w, r)
+		return
+	}
+
+	if h.appUseCase != nil {
+		app, err := h.appUseCase.GetApp(r.Context(), id)
+		if err != nil {
+			log.Printf("Failed to load app %s: %v", id, err)
+			http.NotFound(w, r)
+			return
+		}
+
+		html := h.renderAppLogsPage(app)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte(html))
 		return
 	}
 
@@ -189,7 +264,7 @@ func (h *DashboardHandler) APIGetDashboard(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	dashboardData, err := h.dashboardUseCase.GetDashboardData(r.Context())
+	dashboardData, err := h.loadDashboardData(r.Context())
 	if err != nil {
 		log.Printf("Failed to get dashboard data: %v", err)
 		h.writeErrorResponse(w, http.StatusInternalServerError, "Internal Server Error")
@@ -231,6 +306,24 @@ func (h *DashboardHandler) APIUpdateContainer(w http.ResponseWriter, r *http.Req
 
 	if strings.TrimSpace(request.Status) == "" {
 		h.writeErrorResponse(w, http.StatusBadRequest, "Status is required")
+		return
+	}
+
+	if h.appUseCase != nil {
+		if err := h.updateAppFromContainerAction(r.Context(), containerID, request.Status); err != nil {
+			log.Printf("Failed to update app status: %v", err)
+			switch {
+			case errors.Is(err, domain.ErrAppNotFound):
+				h.writeErrorResponse(w, http.StatusNotFound, "App not found")
+			case errors.Is(err, domain.ErrInvalidContainerStatus), errors.Is(err, domain.ErrInvalidComposeYAML):
+				h.writeErrorResponse(w, http.StatusBadRequest, "Invalid app action")
+			default:
+				h.writeErrorResponse(w, http.StatusInternalServerError, "Internal Server Error")
+			}
+			return
+		}
+		response := map[string]bool{"success": true}
+		h.writeJSON(w, http.StatusOK, response)
 		return
 	}
 
