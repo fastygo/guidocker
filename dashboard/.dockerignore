@@ -1,0 +1,9 @@
+.git
+.gitignore
+.cursor
+bin
+dist
+dashboard
+*.log
+tmp
+coverage*

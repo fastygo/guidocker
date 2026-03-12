@@ -80,6 +80,31 @@ BOLT_DB_FILE=/opt/stacks/.paas.db \
 - UI: `http://localhost:3000`
 - Login: `http://localhost:3000/login`
 
+## Makefile targets
+
+Основные команды для VPS:
+
+```bash
+# Build local binary into ./bin
+make build
+
+# Build Linux release binary into ./dist
+make release
+
+# Run tests
+make test
+
+# Build Docker image
+make docker-build IMAGE_NAME=paas-dashboard IMAGE_TAG=latest
+
+# Run container
+make docker-run IMAGE_NAME=paas-dashboard IMAGE_TAG=latest \
+  CONTAINER_NAME=paas-dashboard \
+  PAAS_ADMIN_USER=admin \
+  PAAS_ADMIN_PASS='admin@123' \
+  STACKS_DIR=/opt/stacks
+```
+
 ## Конфигурация
 
 ### Основные переменные окружения
