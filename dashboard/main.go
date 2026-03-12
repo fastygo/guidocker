@@ -2,10 +2,11 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"dashboard/config"
 	"dashboard/domain"
 	"dashboard/interfaces"
-	"fmt"
+	"dashboard/infrastructure"
 	"log"
 	"net"
 	"net/http"
@@ -27,60 +28,48 @@ func findFreePort(startPort int) (int, error) {
 	return 0, fmt.Errorf("no free ports found in range %d-%d", startPort, startPort+99)
 }
 
-func isPortInUse(port int) bool {
+func resolvePort(preferredPort int) (int, error) {
+	if port, err := resolvePortIfFree(preferredPort); err == nil {
+		return port, nil
+	}
+	return findFreePort(preferredPort + 1)
+}
+
+func resolvePortIfFree(port int) (int, error) {
 	addr := fmt.Sprintf(":%d", port)
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
-		return true // port is in use
+		return 0, err
 	}
 	listener.Close()
-	return false
+	return port, nil
 }
 
-func startServerOnPort(cfg *config.Config, port int) *http.Server {
-	// Update config with the actual port
-	cfg.Server.Port = port
-
-	// Initialize dependencies (Clean Architecture layers)
-	service := domain.NewDashboardService(cfg.Data.DashboardFile)
-	handler := interfaces.NewDashboardHandler(service)
-
-	// Setup HTTP routes using standard library
+func buildServer(cfg *config.Config, useCase domain.DashboardUseCase) *http.Server {
 	mux := http.NewServeMux()
+	handler := interfaces.NewDashboardHandler(useCase)
 
-	// Web routes
-	mux.HandleFunc("/", handler.Dashboard)
-
-	// API routes
-	mux.HandleFunc("/api/dashboard", handler.APIGetDashboard)
-	mux.HandleFunc("/api/containers/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "PUT" {
-			handler.APIUpdateContainer(w, r)
-		} else {
-			http.NotFound(w, r)
-		}
-	})
-
-	// Static files
-	mux.Handle("/data/", http.StripPrefix("/data/", http.FileServer(http.Dir("data/"))))
-
-	server := &http.Server{
-		Addr:    cfg.GetServerAddress(),
-		Handler: mux,
-	}
-
-	return server
+	interfaces.RegisterRoutes(mux, handler)
+	return &http.Server{Addr: cfg.GetServerAddress(), Handler: mux}
 }
 
 func main() {
 	// Load configuration
 	cfg := config.Load()
+	requestedPort := cfg.Server.Port
+	repo := infrastructure.NewDashboardRepository(cfg.Data.DashboardFile)
+	service := domain.NewDashboardService(repo)
+	freePort, err := resolvePort(cfg.Server.Port)
+	if err != nil {
+		log.Fatalf("❌ No free ports available in range %d-%d", cfg.Server.Port, cfg.Server.Port+99)
+	}
+	cfg.Server.Port = freePort
 
-	// Use port from config (can be overridden by SERVER_PORT env var)
-	preferredPort := cfg.Server.Port
+	if requestedPort != freePort {
+		log.Printf("⚠️  Port %d was unavailable, using fallback port %d", requestedPort, freePort)
+	}
 
-	// Try to start server on preferred port first
-	server := startServerOnPort(cfg, preferredPort)
+	server := buildServer(cfg, service)
 
 	// Start server in goroutine
 	go func() {
@@ -89,21 +78,7 @@ func main() {
 		log.Printf("📊 Data source: %s", cfg.Data.DashboardFile)
 
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Printf("⚠️  Port %d failed, trying alternative port...", preferredPort)
-
-			// Find alternative port and restart server
-			freePort, portErr := findFreePort(preferredPort + 1)
-			if portErr != nil {
-				log.Fatalf("❌ No free ports available in range %d-%d", preferredPort+1, preferredPort+99)
-			}
-
-			log.Printf("✅ Found free port: %d ✓ Using alternative port", freePort)
-			server = startServerOnPort(cfg, freePort)
-
-			// Try to start on alternative port
-			if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				log.Fatalf("❌ Server failed to start on alternative port: %v", err)
-			}
+			log.Fatalf("❌ Server failed to start: %v", err)
 		}
 	}()
 

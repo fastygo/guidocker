@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 )
 
 // DashboardRepository implements data access for dashboard
@@ -22,6 +23,7 @@ func NewDashboardRepository(dataFile string) *DashboardRepository {
 
 // LoadDashboardData loads dashboard data from JSON file
 func (r *DashboardRepository) LoadDashboardData(ctx context.Context) (*domain.DashboardData, error) {
+	_ = ctx
 	data, err := os.ReadFile(r.dataFile)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -47,9 +49,19 @@ func (r *DashboardRepository) LoadDashboardData(ctx context.Context) (*domain.Da
 
 // SaveDashboardData saves dashboard data to JSON file
 func (r *DashboardRepository) SaveDashboardData(ctx context.Context, dashboard *domain.DashboardData) error {
+	_ = ctx
+	if dashboard == nil {
+		return fmt.Errorf("dashboard data is nil")
+	}
+
 	data, err := json.MarshalIndent(dashboard, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal dashboard data: %w", err)
+	}
+
+	dir := filepath.Dir(r.dataFile)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
 	if err := os.WriteFile(r.dataFile, data, 0644); err != nil {

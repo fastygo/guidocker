@@ -2,10 +2,7 @@ package domain
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"time"
 )
 
@@ -18,87 +15,70 @@ type DashboardUseCase interface {
 
 // DashboardService implements DashboardUseCase
 type DashboardService struct {
-	dataFile string
+	repository DashboardRepository
 }
 
 // NewDashboardService creates a new dashboard service
-func NewDashboardService(dataFile string) *DashboardService {
+func NewDashboardService(repository DashboardRepository) *DashboardService {
 	return &DashboardService{
-		dataFile: dataFile,
+		repository: repository,
 	}
 }
 
 // GetDashboardData retrieves dashboard data from JSON file
 func (s *DashboardService) GetDashboardData(ctx context.Context) (*DashboardData, error) {
-	data, err := os.ReadFile(s.dataFile)
+	if s.repository == nil {
+		return nil, ErrMissingRepository
+	}
+
+	dashboard, err := s.repository.LoadDashboardData(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read dashboard data: %w", err)
+		return nil, fmt.Errorf("failed to load dashboard data: %w", err)
 	}
 
-	var dashboard DashboardData
-	if err := json.Unmarshal(data, &dashboard); err != nil {
-		return nil, fmt.Errorf("failed to parse dashboard data: %w", err)
+	for i := range dashboard.Containers {
+		dashboard.Containers[i].Status = NormalizeStoredStatus(dashboard.Containers[i].Status)
 	}
+	dashboard.Stats = BuildStats(dashboard.Containers)
 
-	// Calculate stats if not provided
-	if dashboard.Stats.TotalContainers == 0 {
-		dashboard.Stats.TotalContainers = len(dashboard.Containers)
-		dashboard.Stats.RunningContainers = 0
-		dashboard.Stats.StoppedContainers = 0
-		dashboard.Stats.PausedContainers = 0
-
-		for _, container := range dashboard.Containers {
-			switch container.Status {
-			case "running":
-				dashboard.Stats.RunningContainers++
-			case "stopped":
-				dashboard.Stats.StoppedContainers++
-			case "paused":
-				dashboard.Stats.PausedContainers++
-			}
-		}
-	}
-
-	return &dashboard, nil
+	return dashboard, nil
 }
 
 // UpdateContainerStatus updates the status of a specific container
 func (s *DashboardService) UpdateContainerStatus(ctx context.Context, containerID, status string) error {
+	if s.repository == nil {
+		return ErrMissingRepository
+	}
+
+	canonicalStatus, valid := ParseStatusForUpdate(status)
+	if !valid {
+		return fmt.Errorf("%w: %s", ErrInvalidContainerStatus, status)
+	}
+
 	dashboard, err := s.GetDashboardData(ctx)
 	if err != nil {
 		return err
 	}
 
 	// Find and update container
+	found := false
 	for i := range dashboard.Containers {
 		if dashboard.Containers[i].ID == containerID {
-			dashboard.Containers[i].Status = status
-			dashboard.Containers[i].LastUpdated = time.Now()
+			dashboard.Containers[i].Status = canonicalStatus
+			dashboard.Containers[i].LastUpdated = time.Now().UTC()
+			found = true
 			break
 		}
 	}
 
-	// Recalculate stats
-	dashboard.Stats = Stats{
-		TotalContainers:   len(dashboard.Containers),
-		RunningContainers: 0,
-		StoppedContainers: 0,
-		PausedContainers:  0,
+	if !found {
+		return fmt.Errorf("%w: %s", ErrContainerNotFound, containerID)
 	}
 
-	for _, container := range dashboard.Containers {
-		switch container.Status {
-		case "running":
-			dashboard.Stats.RunningContainers++
-		case "stopped":
-			dashboard.Stats.StoppedContainers++
-		case "paused":
-			dashboard.Stats.PausedContainers++
-		}
-	}
+	dashboard.Stats = BuildStats(dashboard.Containers)
 
 	// Save updated data
-	return s.saveDashboardData(dashboard)
+	return s.repository.SaveDashboardData(ctx, dashboard)
 }
 
 // GetContainerByID retrieves a specific container by ID
@@ -114,25 +94,5 @@ func (s *DashboardService) GetContainerByID(ctx context.Context, id string) (*Co
 		}
 	}
 
-	return nil, fmt.Errorf("container with ID %s not found", id)
-}
-
-// saveDashboardData saves dashboard data to JSON file
-func (s *DashboardService) saveDashboardData(dashboard *DashboardData) error {
-	data, err := json.MarshalIndent(dashboard, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal dashboard data: %w", err)
-	}
-
-	// Create directory if it doesn't exist
-	dir := filepath.Dir(s.dataFile)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create directory: %w", err)
-	}
-
-	if err := os.WriteFile(s.dataFile, data, 0644); err != nil {
-		return fmt.Errorf("failed to write dashboard data: %w", err)
-	}
-
-	return nil
+	return nil, fmt.Errorf("%w: %s", ErrContainerNotFound, id)
 }

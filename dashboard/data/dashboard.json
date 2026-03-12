@@ -3,16 +3,16 @@
   "subtitle": "Real-time container monitoring",
   "stats": {
     "total_containers": 6,
-    "running_containers": 1,
-    "stopped_containers": 0,
-    "paused_containers": 1
+    "running_containers": 2,
+    "stopped_containers": 1,
+    "paused_containers": 3
   },
   "containers": [
     {
       "id": "web-app-01",
       "name": "nginx-web",
       "image": "nginx:alpine",
-      "status": "stop",
+      "status": "paused",
       "ports": [
         "80:80",
         "443:443"
@@ -24,7 +24,7 @@
       "id": "api-server-01",
       "name": "api-server",
       "image": "golang:1.21",
-      "status": "pause",
+      "status": "paused",
       "ports": [
         "8080:8080"
       ],
@@ -35,7 +35,7 @@
       "id": "db-postgres-01",
       "name": "postgres-db",
       "image": "postgres:15",
-      "status": "restart",
+      "status": "running",
       "ports": [
         "5432:5432"
       ],
@@ -46,7 +46,7 @@
       "id": "cache-redis-01",
       "name": "redis-cache",
       "image": "redis:7-alpine",
-      "status": "start",
+      "status": "stopped",
       "ports": [
         "6379:6379"
       ],
