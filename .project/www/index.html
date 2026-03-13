@@ -3,56 +3,66 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Welcome to Smart GUI</title>
+  <title>Smart GUI Control Plane</title>
   <link rel="stylesheet" href="style.css">
 </head>
-<body>
-  <div class="aurora"></div>
-  <div class="aurora aurora--two"></div>
-  <div class="aurora aurora--three"></div>
+<body class="relative overflow-x-hidden px-4 py-10">
+  <div class="aurora-layer aurora-layer--primary" aria-hidden="true"></div>
+  <div class="aurora-layer aurora-layer--secondary" aria-hidden="true"></div>
+  <div class="aurora-layer aurora-layer--tertiary" aria-hidden="true"></div>
 
-  <main class="page">
-    <header class="hero">
-      <p class="eyebrow">Smart GUI Control Plane</p>
-      <h1>Welcome to Smart GUI</h1>
-      <p class="lead">
-        Your autonomous administration layer for Docker applications.  
-        Track apps, clean environments safely, and keep your stack tidy without losing control.
+  <main class="relative z-10 mx-auto flex min-h-[calc(100vh-5rem)] max-w-6xl flex-col justify-center gap-8">
+    <header class="glass-card px-7 py-8 sm:px-10 sm:py-10">
+      <p class="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.17em] text-muted-foreground">
+        Smart GUI Control Plane
       </p>
-      <div class="hero-actions">
-        <a class="btn btn-solid" href="/">Open dashboard</a>
-        <a class="btn btn-soft" href="#features">See how it works</a>
+      <h1 class="mt-4 max-w-3xl text-3xl font-semibold tracking-tight text-foreground sm:text-4xl lg:text-5xl">
+        Control your Docker estate with intent and clarity
+      </h1>
+      <p class="mt-4 max-w-2xl text-sm leading-7 text-muted-foreground sm:text-base sm:leading-8">
+        A clean admin surface for app lifecycle, environment hygiene, and production-safe operations. Onboard services, monitor state, and remove leftovers with confidence.
+      </p>
+      <div class="mt-8 flex flex-wrap gap-3">
+        <a class="btn-primary" href="/">Open dashboard</a>
+        <a class="btn-ghost" href="#features">See how it works</a>
       </div>
     </header>
 
-    <section id="features" class="feature-grid">
-      <article class="card reveal">
-        <h2>Zero-friction app rollout</h2>
-        <p>Deploy lightweight services quickly from a single compose definition and keep each app isolated by design.</p>
+    <section id="features" class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <article class="feature-card">
+        <span class="feature-index">01</span>
+        <h2>Zero-friction rollout</h2>
+        <p>Deploy services from one compose reference with predictable defaults and safe defaults for isolation.</p>
       </article>
 
-      <article class="card reveal delay-1">
+      <article class="feature-card">
+        <span class="feature-index">02</span>
         <h2>Autonomy-first workflow</h2>
-        <p>Install, test, replace, or remove applications with predictable outcomes and minimal manual steps.</p>
+        <p>Install, upgrade, and retire applications using repeatable actions with low operator friction.</p>
       </article>
 
-      <article class="card reveal delay-2">
-        <h2>Clear cloud-native observability</h2>
-        <p>View key states of managed apps, stale services, and runtime resources from one concise control panel.</p>
+      <article class="feature-card">
+        <span class="feature-index">03</span>
+        <h2>Operational visibility</h2>
+        <p>Track active resources, stale stacks, and potential conflicts from a single control surface.</p>
       </article>
 
-      <article class="card reveal delay-3">
-        <h2>Safe cleanup mindset</h2>
-        <p>Identify leftovers and broken resources before cleanup, so your Docker host stays clean and ready for the next deploy.</p>
+      <article class="feature-card">
+        <span class="feature-index">04</span>
+        <h2>Clean-up safety</h2>
+        <p>Detect leftovers early and remove them in deliberate steps to keep hosts stable and lean.</p>
       </article>
     </section>
 
     <section class="status-strip">
       <div>
-        <p>Built for one-owner operations</p>
-        <h3>Simple, predictable, and reliable</h3>
+        <p class="text-xs uppercase tracking-[0.14em] text-muted-foreground">Built for owner-ops</p>
+        <h2 class="mt-2 text-2xl font-medium text-foreground">Simple, predictable, and production-oriented</h2>
       </div>
-      <a class="status-link" href="/">Designed for production use</a>
+      <div class="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:gap-4">
+        <span class="status-badge">Always reproducible</span>
+        <a class="btn-ghost" href="/">Designed for production</a>
+      </div>
     </section>
   </main>
 </body>
