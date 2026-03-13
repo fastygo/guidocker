@@ -27,6 +27,11 @@ type AppUseCase interface {
 	GetAppLogs(ctx context.Context, id string, lines int) (string, error)
 }
 
+// ScannerUseCase defines scanner/business logic for auditing Docker resources.
+type ScannerUseCase interface {
+	RunScan(ctx context.Context) (*ScanReport, error)
+}
+
 // DashboardService implements DashboardUseCase
 type DashboardService struct {
 	repository DashboardRepository

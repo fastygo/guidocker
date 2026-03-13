@@ -15,6 +15,7 @@ import (
 type DashboardHandler struct {
 	dashboardUseCase domain.DashboardUseCase
 	appUseCase       domain.AppUseCase
+	scanUseCase      domain.ScannerUseCase
 	loginHandler     http.HandlerFunc
 	renderer         *views.Renderer
 }
@@ -176,6 +177,11 @@ func logsPaasToView(app *domain.App) views.LogsView {
 // SetAppUseCase attaches the app lifecycle use case to the handler.
 func (h *DashboardHandler) SetAppUseCase(useCase domain.AppUseCase) {
 	h.appUseCase = useCase
+}
+
+// SetScanUseCase attaches the scanner use case to the handler.
+func (h *DashboardHandler) SetScanUseCase(useCase domain.ScannerUseCase) {
+	h.scanUseCase = useCase
 }
 
 // SetLoginHandler attaches a dedicated login handler.

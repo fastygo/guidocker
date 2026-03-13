@@ -10,6 +10,7 @@ import (
 	"dashboard/interfaces"
 	"dashboard/interfaces/middleware"
 	appusecase "dashboard/usecase/app"
+	scanusecase "dashboard/usecase/scanner"
 	"dashboard/views"
 	"fmt"
 	"log"
@@ -50,10 +51,11 @@ func resolvePortIfFree(port int) (int, error) {
 	return port, nil
 }
 
-func buildServer(cfg *config.Config, useCase domain.DashboardUseCase, appUseCase domain.AppUseCase, auth *middleware.SessionAuth, renderer *views.Renderer) *http.Server {
+func buildServer(cfg *config.Config, useCase domain.DashboardUseCase, appUseCase domain.AppUseCase, scanUseCase domain.ScannerUseCase, auth *middleware.SessionAuth, renderer *views.Renderer) *http.Server {
 	mux := http.NewServeMux()
 	handler := interfaces.NewDashboardHandler(useCase, renderer)
 	handler.SetAppUseCase(appUseCase)
+	handler.SetScanUseCase(scanUseCase)
 	handler.SetLoginHandler(auth.LoginHandler())
 
 	interfaces.RegisterRoutes(mux, handler)
@@ -104,7 +106,8 @@ func main() {
 		log.Fatalf("❌ Failed to initialize view renderer: %v", err)
 	}
 
-	server := buildServer(cfg, service, appService, auth, renderer)
+	scanService := scanusecase.NewScannerService(dockerRepository, appRepo, cfg.Stacks.Dir)
+	server := buildServer(cfg, service, appService, scanService, auth, renderer)
 
 	// Start server in goroutine
 	go func() {

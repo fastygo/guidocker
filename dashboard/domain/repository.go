@@ -23,4 +23,17 @@ type DockerRepository interface {
 	GetStatus(ctx context.Context, app *App) (string, error)
 	GetLogs(ctx context.Context, appID string, lines int) (string, error)
 	ListRunning(ctx context.Context) ([]Container, error)
+	ListAllContainers(ctx context.Context) ([]Container, error)
+	InspectContainers(ctx context.Context, ids []string) ([]ContainerDetail, error)
+}
+
+type ContainerDetail struct {
+	ID         string
+	Name       string
+	Image      string
+	Labels     map[string]string
+	Mounts     []string
+	Envs       []string
+	Status     string
+	Ports      []string
 }

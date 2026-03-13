@@ -83,6 +83,37 @@ type LogsView struct {
 	LogsContent string
 }
 
+type ScanSummary struct {
+	Managed       int
+	Broken        int
+	OrphanRuntime int
+	OrphanDir     int
+	StaleAdmin    int
+	Unknown       int
+}
+
+type ScanResourceView struct {
+	Kind        string
+	Confidence  string
+	Containers  []string
+	ComposeProject string
+	Dir         string
+	Status      string
+	Reason      string
+	Name        string
+	Ports       []string
+	CleanupCmds []string
+	IsCurrent   bool
+}
+
+type ScanView struct {
+	LayoutData
+	ScannedAt string
+	Resources []ScanResourceView
+	StacksDir string
+	Summary   ScanSummary
+}
+
 // ComposeContainerView is for container-only compose page (no PaaS API).
 type ComposeContainerView struct {
 	LayoutData
@@ -146,6 +177,7 @@ func NewRenderer() (*Renderer, error) {
 		"logs":              "logs.html",
 		"logs_container":    "logs_container.html",
 		"settings":          "settings.html",
+		"scan":              "scan.html",
 	}
 
 	templates := make(map[string]*template.Template)

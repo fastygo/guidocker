@@ -12,4 +12,6 @@ func RegisterRoutes(mux *http.ServeMux, handler *DashboardHandler) {
 	mux.HandleFunc("/api/apps", handler.APIApps)
 	mux.HandleFunc("/api/apps/", handler.APIAppRoutes)
 	mux.HandleFunc("/api/containers/", handler.APIUpdateContainer)
+	mux.HandleFunc("/scan", handler.HandleScan)
+	mux.HandleFunc("/api/scan", handler.APIScan)
 }

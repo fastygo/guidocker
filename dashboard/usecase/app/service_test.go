@@ -62,6 +62,8 @@ type fakeDockerRepository struct {
 	getStatusFn func(context.Context, *domain.App) (string, error)
 	getLogsFn   func(context.Context, string, int) (string, error)
 	destroyFn   func(context.Context, *domain.App) error
+	listAllFn   func(context.Context) ([]domain.Container, error)
+	inspectFn   func(context.Context, []string) ([]domain.ContainerDetail, error)
 }
 
 func (r *fakeDockerRepository) Deploy(ctx context.Context, app *domain.App) error {
@@ -109,6 +111,20 @@ func (r *fakeDockerRepository) Destroy(ctx context.Context, app *domain.App) err
 	}
 
 	return nil
+}
+
+func (r *fakeDockerRepository) ListAllContainers(ctx context.Context) ([]domain.Container, error) {
+	if r.listAllFn != nil {
+		return r.listAllFn(ctx)
+	}
+	return []domain.Container{}, nil
+}
+
+func (r *fakeDockerRepository) InspectContainers(ctx context.Context, ids []string) ([]domain.ContainerDetail, error) {
+	if r.inspectFn != nil {
+		return r.inspectFn(ctx, ids)
+	}
+	return []domain.ContainerDetail{}, nil
 }
 
 func TestService_DeleteApp_FullCleanup(t *testing.T) {

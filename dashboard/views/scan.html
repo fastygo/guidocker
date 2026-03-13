@@ -1,0 +1,128 @@
+{{define "content"}}
+<section class="space-y-4">
+	<div class="text-sm text-muted-foreground">Scanner reports all discovered Docker resources with safe cleanup hints.</div>
+	<div class="text-2xl font-semibold">Scanner</div>
+	<div class="text-xs text-muted-foreground">Last scan: {{.ScannedAt}}</div>
+
+	<div class="rounded border border-border bg-card p-4">
+		<div class="text-sm text-muted-foreground">Stacks directory</div>
+		<div class="text-sm mt-1">{{if .StacksDir}}{{.StacksDir}}{{else}}unknown{{end}}</div>
+	</div>
+
+	<div class="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+		<article class="rounded border border-border bg-card p-3">
+			<div class="text-xs text-muted-foreground">Managed</div>
+			<p class="text-2xl font-semibold">{{.Summary.Managed}}</p>
+		</article>
+		<article class="rounded border border-border bg-card p-3">
+			<div class="text-xs text-muted-foreground">Broken apps</div>
+			<p class="text-2xl font-semibold">{{.Summary.Broken}}</p>
+		</article>
+		<article class="rounded border border-border bg-card p-3">
+			<div class="text-xs text-muted-foreground">Orphan dirs</div>
+			<p class="text-2xl font-semibold">{{.Summary.OrphanDir}}</p>
+		</article>
+		<article class="rounded border border-border bg-card p-3">
+			<div class="text-xs text-muted-foreground">Orphan runtime</div>
+			<p class="text-2xl font-semibold">{{.Summary.OrphanRuntime}}</p>
+		</article>
+		<article class="rounded border border-border bg-card p-3">
+			<div class="text-xs text-muted-foreground">Stale admin</div>
+			<p class="text-2xl font-semibold">{{.Summary.StaleAdmin}}</p>
+		</article>
+		<article class="rounded border border-border bg-card p-3">
+			<div class="text-xs text-muted-foreground">Unknown</div>
+			<p class="text-2xl font-semibold">{{.Summary.Unknown}}</p>
+		</article>
+	</div>
+
+	<div class="rounded border border-border bg-card">
+		<div class="px-4 py-3 border-b border-border">
+			<div class="text-sm font-semibold">Discovered resources</div>
+		</div>
+		<div class="overflow-x-auto">
+			{{if .Resources}}
+			<table class="w-full">
+				<thead class="bg-muted">
+					<tr>
+						<th class="px-4 py-3 text-left text-xs font-semibold text-muted-foreground min-w-0">Name</th>
+						<th class="px-4 py-3 text-left text-xs font-semibold text-muted-foreground min-w-0">Kind</th>
+						<th class="px-4 py-3 text-left text-xs font-semibold text-muted-foreground min-w-0">Status</th>
+						<th class="px-4 py-3 text-left text-xs font-semibold text-muted-foreground min-w-0">Confidence</th>
+						<th class="px-4 py-3 text-left text-xs font-semibold text-muted-foreground min-w-0">Dir</th>
+						<th class="px-4 py-3 text-left text-xs font-semibold text-muted-foreground min-w-0">Containers</th>
+						<th class="px-4 py-3 text-left text-xs font-semibold text-muted-foreground min-w-0">Reason</th>
+					</tr>
+				</thead>
+				<tbody class="divide-y divide-border">
+					{{$resources := .Resources}}
+					{{range $index, $resource := $resources}}
+					<tr>
+						<td class="px-4 py-3 text-sm min-w-0">{{.Name}}</td>
+						<td class="px-4 py-3 text-sm min-w-0">{{.Kind}}</td>
+						<td class="px-4 py-3 text-sm min-w-0">{{.Status}}</td>
+						<td class="px-4 py-3 text-sm min-w-0">{{.Confidence}}</td>
+						<td class="px-4 py-3 text-sm text-muted-foreground min-w-0">{{.Dir}}</td>
+						<td class="px-4 py-3 text-sm text-muted-foreground min-w-0">{{join .Containers ", "}}</td>
+						<td class="px-4 py-3 text-sm text-muted-foreground min-w-0">
+							<button class="px-2 py-1 rounded border border-border text-xs" onclick="toggleScanRow('scan-row-{{$index}}')">Details</button>
+						</td>
+					</tr>
+					<tr id="scan-row-{{$index}}" class="hidden">
+						<td class="px-4 py-3" colspan="7">
+							<div class="space-y-3">
+								<div class="text-sm">
+									<div class="font-semibold">Reason</div>
+									<div class="text-muted-foreground">{{.Reason}}</div>
+								</div>
+								<div class="text-sm">
+									<div class="font-semibold">Project</div>
+									<div class="text-muted-foreground">{{if .ComposeProject}}{{.ComposeProject}}{{else}}-{{end}}</div>
+								</div>
+								<div class="text-sm">
+									<div class="font-semibold">Ports</div>
+									<div class="text-muted-foreground">{{join .Ports ", "}}</div>
+								</div>
+								{{if .IsCurrent}}<div class="text-xs text-amber-500">This appears to be the currently running admin container.</div>{{end}}
+								<div>
+									<div class="text-sm font-semibold mb-1">Cleanup commands</div>
+									{{if .CleanupCmds}}
+									<div class="relative">
+										<button class="absolute right-2 top-2 text-xs px-2 py-1 rounded border border-border" onclick="copyScanCommands('scan-cmd-{{$index}}')">Copy</button>
+										<pre id="scan-cmd-{{$index}}" class="rounded border border-border bg-muted px-3 py-2 text-xs overflow-x-auto whitespace-pre-wrap">{{join .CleanupCmds "\n"}}</pre>
+									</div>
+									{{else}}
+									<div class="text-sm text-muted-foreground">No automatic command is suggested for this item.</div>
+									{{end}}
+								</div>
+							</div>
+						</td>
+					</tr>
+					{{end}}
+				</tbody>
+			</table>
+			{{else}}
+			<div class="p-4 text-sm text-muted-foreground">No resources discovered yet.</div>
+			{{end}}
+		</div>
+	</div>
+</section>
+
+<script>
+	window.toggleScanRow = function(rowId) {
+		const row = document.getElementById(rowId);
+		if (!row) return;
+		row.classList.toggle('hidden');
+	};
+
+	window.copyScanCommands = async function(outputId) {
+		const target = document.getElementById(outputId);
+		if (!target) return;
+		try {
+			await navigator.clipboard.writeText(target.textContent || '');
+		} catch (err) {
+			console.error('Copy failed:', err);
+		}
+	};
+</script>
+{{end}}

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sort"
 )
 
 // Repository executes Docker Compose commands through the Docker CLI.
@@ -135,41 +136,76 @@ func (r *Repository) ListRunning(ctx context.Context) ([]domain.Container, error
 		return nil, fmt.Errorf("list running containers: %w", err)
 	}
 
-	lines := bytes.Split(bytes.TrimSpace(output), []byte("\n"))
-	if len(lines) == 1 && len(lines[0]) == 0 {
+	lines := splitDockerPSOutput(output)
+	if len(lines) == 0 {
 		return []domain.Container{}, nil
 	}
 
-	type dockerPSLine struct {
-		ID     string `json:"ID"`
-		Image  string `json:"Image"`
-		Names  string `json:"Names"`
-		Ports  string `json:"Ports"`
-		Status string `json:"Status"`
-		State  string `json:"State"`
+	return parseDockerPS(lines), nil
+}
+
+func (r *Repository) ListAllContainers(ctx context.Context) ([]domain.Container, error) {
+	output, err := r.run(ctx, "docker", "ps", "-a", "--format", "{{json .}}")
+	if err != nil {
+		return nil, fmt.Errorf("list all containers: %w", err)
 	}
 
-	containers := make([]domain.Container, 0, len(lines))
-	for _, line := range lines {
-		if len(bytes.TrimSpace(line)) == 0 {
-			continue
-		}
-
-		var entry dockerPSLine
-		if err := json.Unmarshal(line, &entry); err != nil {
-			return nil, fmt.Errorf("decode docker ps line: %w", err)
-		}
-
-		containers = append(containers, domain.Container{
-			ID:     entry.ID,
-			Name:   entry.Names,
-			Image:  entry.Image,
-			Status: normalizeDockerPSStatus(entry.State, entry.Status),
-			Ports:  splitPorts(entry.Ports),
-		})
+	lines := splitDockerPSOutput(output)
+	if len(lines) == 0 {
+		return []domain.Container{}, nil
 	}
 
-	return containers, nil
+	return parseDockerPS(lines), nil
+}
+
+func (r *Repository) InspectContainers(ctx context.Context, ids []string) ([]domain.ContainerDetail, error) {
+	if len(ids) == 0 {
+		return []domain.ContainerDetail{}, nil
+	}
+
+	args := make([]string, 0, len(ids)+1)
+	args = append(args, "inspect")
+	args = append(args, ids...)
+
+	output, err := r.run(ctx, "docker", args...)
+	if err != nil {
+		return nil, fmt.Errorf("inspect containers: %w", err)
+	}
+
+	output = bytes.TrimSpace(output)
+	if len(output) == 0 {
+		return []domain.ContainerDetail{}, nil
+	}
+
+	var items []dockerInspect
+	if err := json.Unmarshal(output, &items); err != nil {
+		return nil, fmt.Errorf("decode docker inspect: %w", err)
+	}
+
+	details := make([]domain.ContainerDetail, 0, len(items))
+	for _, item := range items {
+		labels := item.Config.Labels
+		if labels == nil {
+			labels = map[string]string{}
+		}
+
+		detail := domain.ContainerDetail{
+			ID:     item.ID,
+			Name:   strings.TrimPrefix(item.Name, "/"),
+			Image:  item.Config.Image,
+			Labels: labels,
+			Envs:   append([]string(nil), item.Config.Env...),
+			Status: normalizeInspectStatus(item.State.Status),
+			Ports:  parseDockerInspectPorts(item.NetworkSettings.Ports),
+		}
+		if detail.Image == "" {
+			detail.Image = item.Image
+		}
+		detail.Mounts = parseDockerInspectMounts(item.Mounts)
+		details = append(details, detail)
+	}
+
+	return details, nil
 }
 
 func (r *Repository) composeFile(appID, appDir string) string {
@@ -245,6 +281,85 @@ func parseComposeStatus(output []byte) string {
 	return domain.AppStatusStopped
 }
 
+func splitDockerPSOutput(output []byte) [][]byte {
+	lines := bytes.Split(bytes.TrimSpace(output), []byte("\n"))
+	filtered := make([][]byte, 0, len(lines))
+	for _, line := range lines {
+		if len(bytes.TrimSpace(line)) == 0 {
+			continue
+		}
+		filtered = append(filtered, line)
+	}
+	return filtered
+}
+
+func parseDockerPS(lines [][]byte) []domain.Container {
+	containers := make([]domain.Container, 0, len(lines))
+	for _, line := range lines {
+		var entry dockerPSLine
+		if err := json.Unmarshal(line, &entry); err != nil {
+			continue
+		}
+
+		containers = append(containers, domain.Container{
+			ID:     entry.ID,
+			Name:   strings.TrimSpace(entry.Names),
+			Image:  entry.Image,
+			Status: normalizeDockerPSStatus(entry.State, entry.Status),
+			Ports:  splitPorts(entry.Ports),
+		})
+	}
+
+	return containers
+}
+
+func parseDockerInspectMounts(mounts []dockerInspectMount) []string {
+	paths := make([]string, 0, len(mounts))
+	for _, mount := range mounts {
+		if strings.TrimSpace(mount.Destination) != "" {
+			paths = append(paths, mount.Destination)
+			continue
+		}
+		if strings.TrimSpace(mount.Target) != "" {
+			paths = append(paths, mount.Target)
+		}
+	}
+	return paths
+}
+
+func parseDockerInspectPorts(raw map[string][]dockerInspectPortBinding) []string {
+	ports := make([]string, 0, len(raw))
+	for containerPort, bindings := range raw {
+		if len(bindings) == 0 {
+			ports = append(ports, containerPort)
+			continue
+		}
+		for _, binding := range bindings {
+			ip := strings.TrimSpace(binding.HostIP)
+			entry := fmt.Sprintf("%s->%s", binding.HostPort, containerPort)
+			if ip != "" {
+				entry = fmt.Sprintf("%s:%s->%s", ip, binding.HostPort, containerPort)
+			}
+			ports = append(ports, entry)
+		}
+	}
+
+	sort.Strings(ports)
+	return ports
+}
+
+func normalizeInspectStatus(raw string) string {
+	value := strings.ToLower(strings.TrimSpace(raw))
+	switch {
+	case strings.Contains(value, "running"), strings.Contains(value, "up"):
+		return domain.ContainerStatusRunning
+	case strings.Contains(value, "paused"):
+		return domain.ContainerStatusPaused
+	default:
+		return domain.ContainerStatusStopped
+	}
+}
+
 func splitPorts(value string) []string {
 	if strings.TrimSpace(value) == "" {
 		return nil
@@ -276,6 +391,49 @@ func normalizeDockerPSStatus(state, status string) string {
 	default:
 		return domain.ContainerStatusStopped
 	}
+}
+
+type dockerPSLine struct {
+	ID     string `json:"ID"`
+	Image  string `json:"Image"`
+	Names  string `json:"Names"`
+	Ports  string `json:"Ports"`
+	Status string `json:"Status"`
+	State  string `json:"State"`
+}
+
+type dockerInspect struct {
+	ID             string                `json:"Id"`
+	Name           string                `json:"Name"`
+	Image          string                `json:"Image"`
+	Config         dockerInspectConfig   `json:"Config"`
+	State          dockerInspectState    `json:"State"`
+	Mounts         []dockerInspectMount  `json:"Mounts"`
+	NetworkSettings dockerInspectNetwork `json:"NetworkSettings"`
+}
+
+type dockerInspectConfig struct {
+	Image  string            `json:"Image"`
+	Labels map[string]string `json:"Labels"`
+	Env    []string          `json:"Env"`
+}
+
+type dockerInspectState struct {
+	Status string `json:"Status"`
+}
+
+type dockerInspectMount struct {
+	Destination string `json:"Destination"`
+	Target      string `json:"Target"`
+}
+
+type dockerInspectNetwork struct {
+	Ports map[string][]dockerInspectPortBinding `json:"Ports"`
+}
+
+type dockerInspectPortBinding struct {
+	HostIP   string `json:"HostIP"`
+	HostPort string `json:"HostPort"`
 }
 
 var _ domain.DockerRepository = (*Repository)(nil)
