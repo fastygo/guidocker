@@ -1,50 +1,56 @@
 # PaaS Dashboard MVP
 
-Лёгкий PaaS-сервис на Go для управления приложениями через Docker Compose:
+A lightweight Go-based PaaS service for managing applications via Docker Compose:
 
-- HTTP Basic Auth + login screen
-- BoltDB-хранилище метаданных приложений
-- deploy/stop/restart/logs через `docker compose`
-- браузерные экраны: Overview, Apps, Compose, Logs
-- fallback на старый JSON dashboard для совместимости
+- **HTTP Basic Auth** with session-based login
+- **BoltDB** storage for app metadata
+- **Deploy / stop / restart / logs** via `docker compose` CLI
+- **Web UI**: Overview, Apps, Compose editor, Logs, Scanner, Settings
+- Fallback to legacy JSON dashboard for compatibility
 
-## Архитектура
+## Architecture
 
 ```text
 dashboard/
-├── config/                    # ENV configuration
-├── domain/                    # Entities, errors, interfaces
+├── config/                    # Environment-based configuration
+├── domain/                    # Entities, errors, port interfaces
 ├── infrastructure/
-│   ├── bolt/                  # App repository over BoltDB
+│   ├── bolt/                  # App repository (BoltDB)
 │   ├── docker/                # Docker CLI adapter
-│   └── repository.go          # Legacy JSON dashboard repository
+│   └── repository.go         # Legacy JSON dashboard repository
 ├── interfaces/
 │   ├── middleware/            # Basic Auth + session login
 │   ├── handlers.go            # Legacy dashboard handlers
-│   └── paas_handlers.go       # PaaS pages + API
-├── usecase/app/               # App lifecycle service
+│   ├── paas_handlers.go       # PaaS pages + REST API
+│   └── scan_handlers.go       # Scanner UI + API
+├── usecase/
+│   ├── app/                   # App lifecycle service
+│   └── scanner/               # Docker resource scanner
+├── views/                     # HTML templates
+├── static/                    # CSS (Tailwind), assets
 ├── data/                      # Legacy dashboard seed data
 └── main.go                    # Server wiring
 ```
 
-## Что умеет MVP
+## Features
 
-- создавать приложение по `docker-compose.yml`
-- хранить метаданные в BoltDB
-- сохранять compose-стек в `STACKS_DIR/<app-id>/docker-compose.yml`
-- запускать `docker compose up -d`, `down`, `restart`
-- отдавать логи через API
-- отображать статус приложения в UI
+- Create apps from `docker-compose.yml` YAML
+- Store metadata in BoltDB
+- Persist compose stacks to `STACKS_DIR/<app-id>/docker-compose.yml`
+- Run `docker compose up -d`, `down`, `restart`
+- Stream logs via API
+- Display app status in the UI
+- Scan Docker resources and reconcile with stored apps
 
-## Требования к серверу
+## Server Requirements
 
-### Ubuntu / Debian setup
+### Ubuntu / Debian
 
 ```bash
 sudo apt-get update
 sudo apt-get install -y docker.io docker-compose-plugin nginx
 
-# Если docker compose plugin недоступен в репозитории:
+# If docker compose plugin is unavailable in the repo:
 sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" \
   -o /usr/local/bin/docker-compose
 sudo chmod +x /usr/local/bin/docker-compose
@@ -54,13 +60,13 @@ sudo mkdir -p /opt/stacks
 sudo chown -R "$USER:$USER" /opt/stacks
 ```
 
-После изменения группы `docker` перелогиньтесь или выполните:
+After changing the `docker` group, re-login or run:
 
 ```bash
 newgrp docker
 ```
 
-## Сборка и локальный запуск
+## Build and Run
 
 ```bash
 cd dashboard
@@ -75,12 +81,12 @@ BOLT_DB_FILE=/opt/stacks/.paas.db \
 ./dashboard
 ```
 
-После запуска:
+Then:
 
-- UI: `http://localhost:3000`
-- Login: `http://localhost:3000/login`
+- **UI**: `http://localhost:3000`
+- **Login**: `http://localhost:3000/login`
 
-## Development mode (Tailwind CLI + Air)
+## Development (Tailwind CLI + Air)
 
 Prerequisites:
 
@@ -90,47 +96,35 @@ npm install
 go install github.com/air-verse/air@latest
 ```
 
-`dashboard/package.json` scripts used in dev:
+`dashboard/package.json` scripts:
 
-- `dev:css` — `tailwindcss --watch`
-- `build:css` — one-time CSS build
-- `dev:air` — runs `dev:css` + `air` together
+| Script      | Description                          |
+| ----------- | ------------------------------------ |
+| `dev:css`   | Tailwind CSS watch mode              |
+| `build:css` | One-time CSS build                   |
+| `build:www` | Build landing page CSS (`.project/www`) |
+| `dev:air`   | Runs `dev:css` + `air` together      |
 
-Two-terminal flow (as requested):
+**Two-terminal flow:**
 
-- **Terminal 1 (bash):**
+- **Terminal 1:** `npm run build:css`
+- **Terminal 2:** `air`
 
-```bash
-cd dashboard
-npm run build:css
-```
+Or use a single terminal: `npm run dev:air`.
 
-- **Terminal 2 (secondary):**
-
-```bash
-cd dashboard
-air
-```
-
-If you run `air` in the second terminal, do not use `npm run dev:air` there to avoid duplicate Tailwind watchers.
-
-If you prefer one terminal only, use `npm run dev:air`.
-
-If you want auth off for local iteration:
+**Disable auth for local iteration:**
 
 ```bash
 cd dashboard
 DASHBOARD_AUTH_DISABLED=true air
 ```
 
-Fast checks while developing:
+**Quick checks:**
 
 - Open: `http://localhost:3000/apps` and `http://localhost:3000/apps/new`
 - API: `curl -u admin:admin@123 http://localhost:3000/api/apps`
 
-## Makefile targets
-
-Основные команды для VPS:
+## Makefile Targets
 
 ```bash
 # Build local binary into ./bin
@@ -153,15 +147,14 @@ make docker-run IMAGE_NAME=paas-dashboard IMAGE_TAG=latest \
   STACKS_DIR=/opt/stacks
 ```
 
-### Docker runtime requirements
+### Docker Runtime Requirements
 
-- Run the dashboard with host Docker socket mount:
-  `-v /var/run/docker.sock:/var/run/docker.sock`.
-- Add `--group-add <host-docker-GID>` so user `paas` can access the socket.
-- Mount stacks to `/opt/stacks`, and ensure this path is writable by the container user.
-- Use `make docker-run-auto` on Linux for automatic host docker GID detection.
+- Mount host Docker socket: `-v /var/run/docker.sock:/var/run/docker.sock`
+- Add `--group-add <host-docker-GID>` so the container user can access the socket
+- Mount stacks to `/opt/stacks` (writable by the container user)
+- Use `make docker-run-auto` on Linux for automatic host docker GID detection
 
-Command example:
+**Example:**
 
 ```bash
 docker run -d \
@@ -177,61 +170,60 @@ docker run -d \
   paas-dashboard:latest
 ```
 
-Check `paas` UID inside the image:
-
-```bash
-docker run --rm --entrypoint "" paas-dashboard:latest id -u paas
-```
-
-Make sure `/opt/stacks` is owned by that UID on the host:
+**Ensure `/opt/stacks` ownership:**
 
 ```bash
 HOST_PAAS_UID=$(docker run --rm --entrypoint "" paas-dashboard:latest id -u paas)
 sudo chown -R "$HOST_PAAS_UID":"$HOST_PAAS_UID" /opt/stacks
 ```
 
-## Конфигурация
+## Configuration
 
-### Основные переменные окружения
+| Variable               | Default                 | Description                          |
+| ---------------------- | ----------------------- | ------------------------------------ |
+| `SERVER_HOST`          | `localhost`             | HTTP server host                     |
+| `PAAS_PORT`            | `3000`                  | Main server port                     |
+| `SERVER_PORT`          | `3000`                  | Legacy fallback port                 |
+| `PAAS_ADMIN_USER`      | `admin`                 | Login username                       |
+| `PAAS_ADMIN_PASS`      | `admin@123`             | Login password                       |
+| `DASHBOARD_AUTH_DISABLED` | `false`             | Disable auth for local dev           |
+| `STACKS_DIR`           | `/opt/stacks`           | Base directory for compose stacks    |
+| `BOLT_DB_FILE`         | `/opt/stacks/.paas.db`  | BoltDB file path                     |
+| `DASHBOARD_DATA_FILE`  | `data/dashboard.json`    | Legacy JSON dashboard source         |
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `SERVER_HOST` | `localhost` | Host for HTTP server |
-| `PAAS_PORT` | `3000` | Main server port |
-| `SERVER_PORT` | `3000` | Legacy fallback port variable |
-| `PAAS_ADMIN_USER` | `admin` | Login username |
-| `PAAS_ADMIN_PASS` | `admin@123` | Login password |
-| `DASHBOARD_AUTH_DISABLED` | `false` | Disable auth middleware for local dev |
-| `STACKS_DIR` | `/opt/stacks` | Base directory for compose stacks |
-| `BOLT_DB_FILE` | `/opt/stacks/.paas.db` | BoltDB file |
-| `DASHBOARD_DATA_FILE` | `data/dashboard.json` | Legacy JSON dashboard source |
-
-## Основные роуты
+## Routes
 
 ### Web UI
 
-- `GET /` — overview
-- `GET /login` — login screen
-- `GET /apps` — список приложений
-- `GET /apps/new` — создание приложения
-- `GET /apps/{id}` — карточка приложения
-- `GET /apps/{id}/compose` — редактор compose
-- `GET /apps/{id}/logs` — просмотр логов
+| Path              | Description              |
+| ----------------- | ------------------------ |
+| `GET /`           | Overview                 |
+| `GET /login`      | Login screen             |
+| `GET /apps`       | App list                 |
+| `GET /apps/new`   | Create app               |
+| `GET /apps/{id}`  | App detail               |
+| `GET /apps/{id}/compose` | Compose editor   |
+| `GET /apps/{id}/logs`    | Logs viewer      |
+| `GET /scan`       | Scanner UI                |
+| `GET /settings`   | Settings                 |
 
 ### API
 
-- `GET /api/dashboard`
-- `GET /api/apps`
-- `POST /api/apps`
-- `GET /api/apps/{id}`
-- `PUT /api/apps/{id}`
-- `DELETE /api/apps/{id}`
-- `POST /api/apps/{id}/deploy`
-- `POST /api/apps/{id}/stop`
-- `POST /api/apps/{id}/restart`
-- `GET /api/apps/{id}/logs?lines=100`
+| Method | Path                      | Description        |
+| ------ | ------------------------- | ------------------ |
+| GET    | `/api/dashboard`          | Dashboard data     |
+| GET    | `/api/apps`               | List apps          |
+| POST   | `/api/apps`               | Create app         |
+| GET    | `/api/apps/{id}`          | App detail         |
+| PUT    | `/api/apps/{id}`          | Update app         |
+| DELETE | `/api/apps/{id}`          | Delete app         |
+| POST   | `/api/apps/{id}/deploy`   | Deploy             |
+| POST   | `/api/apps/{id}/stop`     | Stop               |
+| POST   | `/api/apps/{id}/restart`  | Restart            |
+| GET    | `/api/apps/{id}/logs?lines=100` | Logs stream  |
+| GET    | `/api/scan`               | Scanner results    |
 
-### Пример API
+### API Examples
 
 ```bash
 curl -u admin:admin@123 http://localhost:3000/api/apps
@@ -276,7 +268,7 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-Применить:
+Apply:
 
 ```bash
 sudo systemctl daemon-reload
@@ -304,29 +296,29 @@ server {
 }
 ```
 
-Применить:
+Apply:
 
 ```bash
 sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-## Тесты
+## Tests
 
 ```bash
 go test ./...
 ```
 
-Покрыты ключевые сценарии:
+Covered areas:
 
-- config loading
-- app use case lifecycle
+- Config loading
+- App use case lifecycle
 - Bolt repository CRUD
-- handlers: login, create app, deploy
+- Handlers: login, create app, deploy
 
-## Ограничения MVP
+## MVP Limitations
 
-- без автоматической генерации nginx-конфигов под каждое приложение
-- без wildcard SSL / Let's Encrypt
-- без multi-user / RBAC
-- без фоновой синхронизации состояния контейнеров
+- No automatic nginx config generation per app
+- No wildcard SSL / Let's Encrypt
+- No multi-user / RBAC
+- No background sync of container state with stored apps
