@@ -43,6 +43,7 @@ WORKDIR /app
 
 COPY --from=builder /out/dashboard /usr/local/bin/dashboard
 COPY data ./data
+COPY --from=builder /src/static ./static
 
 ENV SERVER_HOST=0.0.0.0 \
     PAAS_PORT=3000 \
