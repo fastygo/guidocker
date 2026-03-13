@@ -1,0 +1,15 @@
+{{define "content"}}
+<section class="space-y-4">
+	<div class="text-sm text-muted-foreground">{{.Subtitle}}</div>
+	<div class="text-2xl font-semibold">Overview</div>
+	<div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">{{template "stats_cards" .Stats}}</div>
+	<div class="rounded border border-border bg-card">
+		<div class="px-4 py-3 border-b border-border">
+			<div class="text-sm font-semibold">Recent containers</div>
+		</div>
+		<div class="overflow-x-auto">
+			{{template "containers_table" .Containers}}
+		</div>
+	</div>
+</section>
+{{end}}

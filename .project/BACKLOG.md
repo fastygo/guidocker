@@ -1,4 +1,4 @@
-# Backlog & deployment notes
+# Backlog and deployment notes
 
 ## Improvements for Dockerfile
 

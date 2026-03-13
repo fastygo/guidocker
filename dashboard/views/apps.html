@@ -1,0 +1,23 @@
+{{define "content"}}
+<section class="space-y-4">
+	<div class="flex items-center justify-between">
+		<div>
+			<div class="text-sm text-muted-foreground">Managed containers</div>
+			<div class="text-2xl font-semibold">Apps</div>
+		</div>
+		<a href="/apps/new" class="px-3 py-2 rounded border border-border text-sm">Create app</a>
+	</div>
+	<div class="grid gap-2">
+		{{if .Items}}
+		{{range .Items}}
+		<a href="/apps/{{.ID}}" class="block rounded border border-border bg-card px-4 py-3 flex items-center justify-between text-sm gap-2 hover:bg-accent">
+			<span class="font-medium truncate">{{.Name}}</span>
+			{{template "status_badge" .Status}}
+		</a>
+		{{end}}
+		{{else}}
+		<div class="rounded border border-dashed border-border bg-card p-6 text-sm text-muted-foreground">No applications yet. Create your first stack from the Compose screen.</div>
+		{{end}}
+	</div>
+</section>
+{{end}}

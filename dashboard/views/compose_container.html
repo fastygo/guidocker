@@ -1,0 +1,39 @@
+{{define "content"}}
+<section class="space-y-4">
+	<div>
+		<div class="text-sm text-muted-foreground">{{.Subtitle}}</div>
+		<div class="text-2xl font-semibold">{{.Title}}</div>
+	</div>
+	<div class="grid gap-3 md:grid-cols-2">
+		<div class="rounded border border-border bg-card p-4">
+			<div class="font-semibold">Compose pack</div>
+			<form onsubmit="event.preventDefault(); showComposeMessage('Compose saved to local draft');" class="space-y-3">
+				<div>
+					<label class="text-sm text-muted-foreground">App name</label>
+					<input class="mt-1 w-full rounded border border-border bg-background px-2 py-2 text-sm" value="{{.Name}}" />
+				</div>
+				<div>
+					<label class="text-sm text-muted-foreground">Service image</label>
+					<input class="mt-1 w-full rounded border border-border bg-background px-2 py-2 text-sm" value="{{.Image}}" />
+				</div>
+				<div>
+					<label class="text-sm text-muted-foreground">Docker Compose yaml</label>
+					<textarea class="mt-1 w-full rounded border border-border bg-background p-2 text-sm" rows="14">{{.ComposeYAML}}</textarea>
+				</div>
+				<div id="compose-status" class="text-sm text-muted-foreground"></div>
+				<div class="flex gap-2">
+					<button type="submit" class="px-3 py-2 rounded border border-border text-sm">Save compose</button>
+					<button type="button" onclick="showComposeMessage('Compose deployment started')" class="px-3 py-2 rounded border border-border text-sm">Deploy now</button>
+				</div>
+			</form>
+		</div>
+		<div class="rounded border border-border bg-card p-4">
+			<div class="font-semibold">Shortcuts</div>
+			<div class="text-sm text-muted-foreground space-y-2 mt-3">
+				<p>Use this screen as a blueprint for full compose-driven deployment.</p>
+				<p>You can paste env vars, volumes, networks and secrets manually into yaml.</p>
+			</div>
+		</div>
+	</div>
+</section>
+{{end}}

@@ -1,0 +1,17 @@
+{{define "container_row"}}
+{{$statusClass := ""}}
+{{$statusLabel := ""}}
+{{if eq .Status "running"}}{{$statusClass = "inline-flex rounded bg-primary px-2 py-1 text-xs text-primary-foreground"}}{{$statusLabel = "Running"}}{{end}}
+{{if eq .Status "stopped"}}{{$statusClass = "inline-flex rounded bg-muted px-2 py-1 text-xs text-muted-foreground"}}{{$statusLabel = "Stopped"}}{{end}}
+{{if eq .Status "paused"}}{{$statusClass = "inline-flex rounded bg-accent px-2 py-1 text-xs text-accent-foreground"}}{{$statusLabel = "Paused"}}{{end}}
+{{if eq $statusClass ""}}{{$statusClass = "inline-flex rounded bg-secondary px-2 py-1 text-xs text-secondary-foreground"}}{{$statusLabel = .Status}}{{end}}
+<tr>
+	<td class="px-4 py-3 text-sm font-medium min-w-0"><a href="/apps/{{.ID}}" class="truncate block">{{.Name}}</a></td>
+	<td class="px-4 py-3 text-sm text-muted-foreground min-w-0 truncate">{{.Image}}</td>
+	<td class="px-4 py-3 text-sm min-w-0 truncate"><span class="{{$statusClass}}">{{$statusLabel}}</span></td>
+	<td class="px-4 py-3 text-sm text-muted-foreground min-w-0 truncate">{{.PortsStr}}</td>
+	<td class="px-4 py-3 text-sm text-muted-foreground min-w-0 truncate">{{.CPUPercent}}</td>
+	<td class="px-4 py-3 text-sm text-muted-foreground min-w-0 truncate">{{.MemoryMB}}</td>
+	<td class="px-4 py-3 text-sm min-w-0">{{template "container_actions" .}}</td>
+</tr>
+{{end}}

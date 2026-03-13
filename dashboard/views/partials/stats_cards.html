@@ -1,0 +1,18 @@
+{{define "stats_cards"}}
+<article class="rounded border border-border bg-card p-4">
+	<div class="text-sm text-muted-foreground">📦 Total Containers</div>
+	<p class="text-3xl font-semibold mt-2">{{.TotalContainers}}</p>
+</article>
+<article class="rounded border border-border bg-card p-4">
+	<div class="text-sm text-muted-foreground">▶️ Running</div>
+	<p class="text-3xl font-semibold mt-2">{{.RunningContainers}}</p>
+</article>
+<article class="rounded border border-border bg-card p-4">
+	<div class="text-sm text-muted-foreground">⏹️ Stopped</div>
+	<p class="text-3xl font-semibold mt-2">{{.StoppedContainers}}</p>
+</article>
+<article class="rounded border border-border bg-card p-4">
+	<div class="text-sm text-muted-foreground">⏸️ Paused</div>
+	<p class="text-3xl font-semibold mt-2">{{.PausedContainers}}</p>
+</article>
+{{end}}

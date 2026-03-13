@@ -10,6 +10,7 @@ import (
 	"dashboard/interfaces"
 	"dashboard/interfaces/middleware"
 	appusecase "dashboard/usecase/app"
+	"dashboard/views"
 	"fmt"
 	"log"
 	"net"
@@ -49,9 +50,9 @@ func resolvePortIfFree(port int) (int, error) {
 	return port, nil
 }
 
-func buildServer(cfg *config.Config, useCase domain.DashboardUseCase, appUseCase domain.AppUseCase, auth *middleware.SessionAuth) *http.Server {
+func buildServer(cfg *config.Config, useCase domain.DashboardUseCase, appUseCase domain.AppUseCase, auth *middleware.SessionAuth, renderer *views.Renderer) *http.Server {
 	mux := http.NewServeMux()
-	handler := interfaces.NewDashboardHandler(useCase)
+	handler := interfaces.NewDashboardHandler(useCase, renderer)
 	handler.SetAppUseCase(appUseCase)
 	handler.SetLoginHandler(auth.LoginHandler())
 
@@ -92,7 +93,12 @@ func main() {
 		log.Printf("⚠️  Port %d was unavailable, using fallback port %d", requestedPort, freePort)
 	}
 
-	server := buildServer(cfg, service, appService, auth)
+	renderer, err := views.NewRenderer()
+	if err != nil {
+		log.Fatalf("❌ Failed to initialize view renderer: %v", err)
+	}
+
+	server := buildServer(cfg, service, appService, auth, renderer)
 
 	// Start server in goroutine
 	go func() {

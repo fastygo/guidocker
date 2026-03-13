@@ -1,0 +1,19 @@
+{{define "container_actions"}}
+{{$id := .ID}}
+{{$status := .Status}}
+{{if eq $status "running"}}
+<button class="px-3 py-2 text-sm rounded border border-border bg-muted text-muted-foreground" onclick="updateContainerStatus('{{$id}}', 'stop')">Stop</button>
+<button class="px-3 py-2 text-sm rounded border border-border bg-muted text-muted-foreground" onclick="updateContainerStatus('{{$id}}', 'pause')">Pause</button>
+<button class="px-3 py-2 text-sm rounded border border-border bg-accent text-accent-foreground" onclick="updateContainerStatus('{{$id}}', 'restart')">Restart</button>
+{{end}}
+{{if eq $status "stopped"}}
+<button class="px-3 py-2 text-sm rounded border border-border bg-primary text-primary-foreground" onclick="updateContainerStatus('{{$id}}', 'start')">Start</button>
+{{end}}
+{{if eq $status "paused"}}
+<button class="px-3 py-2 text-sm rounded border border-border bg-accent text-accent-foreground" onclick="updateContainerStatus('{{$id}}', 'unpause')">Unpause</button>
+<button class="px-3 py-2 text-sm rounded border border-destructive bg-destructive text-destructive-foreground" onclick="updateContainerStatus('{{$id}}', 'stop')">Stop</button>
+{{end}}
+{{if and (ne $status "running") (ne $status "stopped") (ne $status "paused")}}
+<button class="px-3 py-2 text-sm rounded border border-border bg-primary text-primary-foreground" onclick="updateContainerStatus('{{$id}}', 'start')">Start</button>
+{{end}}
+{{end}}

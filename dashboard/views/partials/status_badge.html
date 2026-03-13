@@ -1,0 +1,11 @@
+{{define "status_badge"}}
+{{$class := "inline-flex rounded bg-secondary px-2 py-1 text-xs text-secondary-foreground"}}
+{{$label := .}}
+{{if eq . "running"}}{{$class = "inline-flex rounded bg-primary px-2 py-1 text-xs text-primary-foreground"}}{{$label = "Running"}}{{end}}
+{{if eq . "stopped"}}{{$class = "inline-flex rounded bg-muted px-2 py-1 text-xs text-muted-foreground"}}{{$label = "Stopped"}}{{end}}
+{{if eq . "paused"}}{{$class = "inline-flex rounded bg-accent px-2 py-1 text-xs text-accent-foreground"}}{{$label = "Paused"}}{{end}}
+{{if eq . "created"}}{{$class = "inline-flex rounded bg-muted px-2 py-1 text-xs text-muted-foreground"}}{{$label = "Created"}}{{end}}
+{{if eq . "deploying"}}{{$class = "inline-flex rounded bg-accent px-2 py-1 text-xs text-accent-foreground"}}{{$label = "Deploying"}}{{end}}
+{{if eq . "error"}}{{$class = "inline-flex rounded bg-destructive px-2 py-1 text-xs text-destructive-foreground"}}{{$label = "Error"}}{{end}}
+<span class="{{$class}}">{{$label}}</span>
+{{end}}

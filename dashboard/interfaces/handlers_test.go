@@ -11,7 +11,22 @@ import (
 	"testing"
 
 	"dashboard/domain"
+	"dashboard/views"
 )
+
+var testRenderer *views.Renderer
+
+func init() {
+	var err error
+	testRenderer, err = views.NewRenderer()
+	if err != nil {
+		panic("test renderer: " + err.Error())
+	}
+}
+
+func newTestHandler(useCase domain.DashboardUseCase) *DashboardHandler {
+	return NewDashboardHandler(useCase, testRenderer)
+}
 
 type fakeDashboardUseCase struct {
 	data     *domain.DashboardData
@@ -143,7 +158,7 @@ func TestDashboardHandler_Dashboard_RendersHTML(t *testing.T) {
 		},
 	}
 
-	handler := NewDashboardHandler(useCase)
+	handler := newTestHandler(useCase)
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
 	recorder := httptest.NewRecorder()
 
@@ -171,7 +186,7 @@ func TestDashboardHandler_Dashboard_ComposeCreateScreen(t *testing.T) {
 		},
 	}
 
-	handler := NewDashboardHandler(useCase)
+	handler := newTestHandler(useCase)
 	request := httptest.NewRequest(http.MethodGet, "/apps/new", nil)
 	recorder := httptest.NewRecorder()
 
@@ -192,7 +207,7 @@ func TestDashboardHandler_Dashboard_ComposeEditScreen(t *testing.T) {
 		},
 	}
 
-	handler := NewDashboardHandler(useCase)
+	handler := newTestHandler(useCase)
 	request := httptest.NewRequest(http.MethodGet, "/apps/c1/compose", nil)
 	recorder := httptest.NewRecorder()
 
@@ -213,7 +228,7 @@ func TestDashboardHandler_Dashboard_LogsScreen(t *testing.T) {
 		},
 	}
 
-	handler := NewDashboardHandler(useCase)
+	handler := newTestHandler(useCase)
 	request := httptest.NewRequest(http.MethodGet, "/apps/c1/logs", nil)
 	recorder := httptest.NewRecorder()
 
@@ -227,7 +242,7 @@ func TestDashboardHandler_Dashboard_LogsScreen(t *testing.T) {
 
 func TestDashboardHandler_Dashboard_ServiceError(t *testing.T) {
 	useCase := &fakeDashboardUseCase{getErr: errors.New("service failure")}
-	handler := NewDashboardHandler(useCase)
+	handler := newTestHandler(useCase)
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
 	recorder := httptest.NewRecorder()
 
@@ -245,7 +260,7 @@ func TestDashboardHandler_APIGetDashboard_ReturnsJSON(t *testing.T) {
 			Stats: domain.Stats{TotalContainers: 1},
 		},
 	}
-	handler := NewDashboardHandler(useCase)
+	handler := newTestHandler(useCase)
 	request := httptest.NewRequest(http.MethodGet, "/api/dashboard", nil)
 	recorder := httptest.NewRecorder()
 
@@ -270,7 +285,7 @@ func TestDashboardHandler_APIGetDashboard_MethodNotAllowed(t *testing.T) {
 	useCase := &fakeDashboardUseCase{
 		data: &domain.DashboardData{Title: "JSON Dashboard"},
 	}
-	handler := NewDashboardHandler(useCase)
+	handler := newTestHandler(useCase)
 	request := httptest.NewRequest(http.MethodPost, "/api/dashboard", nil)
 	recorder := httptest.NewRecorder()
 
@@ -291,7 +306,7 @@ func TestDashboardHandler_APIUpdateContainer_Success(t *testing.T) {
 			return nil
 		},
 	}
-	handler := NewDashboardHandler(useCase)
+	handler := newTestHandler(useCase)
 
 	body, _ := json.Marshal(map[string]string{"status": "stop"})
 	request := httptest.NewRequest(http.MethodPut, "/api/containers/web-app-01", bytes.NewBuffer(body))
@@ -325,7 +340,7 @@ func TestDashboardHandler_APIUpdateContainer_InvalidStatus(t *testing.T) {
 			return domain.ErrInvalidContainerStatus
 		},
 	}
-	handler := NewDashboardHandler(useCase)
+	handler := newTestHandler(useCase)
 
 	body, _ := json.Marshal(map[string]string{"status": "broken"})
 	request := httptest.NewRequest(http.MethodPut, "/api/containers/web-app-01", bytes.NewBuffer(body))
@@ -339,7 +354,7 @@ func TestDashboardHandler_APIUpdateContainer_InvalidStatus(t *testing.T) {
 }
 
 func TestDashboardHandler_APIUpdateContainer_MethodNotAllowed(t *testing.T) {
-	handler := NewDashboardHandler(&fakeDashboardUseCase{})
+	handler := newTestHandler(&fakeDashboardUseCase{})
 	request := httptest.NewRequest(http.MethodGet, "/api/containers/web-app-01", nil)
 	recorder := httptest.NewRecorder()
 
@@ -356,7 +371,7 @@ func TestDashboardHandler_APIUpdateContainer_NotFound(t *testing.T) {
 			return domain.ErrContainerNotFound
 		},
 	}
-	handler := NewDashboardHandler(useCase)
+	handler := newTestHandler(useCase)
 
 	body, _ := json.Marshal(map[string]string{"status": "start"})
 	request := httptest.NewRequest(http.MethodPut, "/api/containers/web-app-01", bytes.NewBuffer(body))
@@ -370,7 +385,7 @@ func TestDashboardHandler_APIUpdateContainer_NotFound(t *testing.T) {
 }
 
 func TestDashboardHandler_LoginScreen(t *testing.T) {
-	handler := NewDashboardHandler(&fakeDashboardUseCase{})
+	handler := newTestHandler(&fakeDashboardUseCase{})
 	request := httptest.NewRequest(http.MethodGet, "/login", nil)
 	recorder := httptest.NewRecorder()
 
@@ -385,7 +400,7 @@ func TestDashboardHandler_LoginScreen(t *testing.T) {
 }
 
 func TestDashboardHandler_APIApps_Create(t *testing.T) {
-	handler := NewDashboardHandler(&fakeDashboardUseCase{})
+	handler := newTestHandler(&fakeDashboardUseCase{})
 	handler.SetAppUseCase(&fakeAppUseCase{
 		createFn: func(_ context.Context, name, composeYAML string) (*domain.App, error) {
 			if name != "demo" {
@@ -420,7 +435,7 @@ func TestDashboardHandler_APIApps_Create(t *testing.T) {
 
 func TestDashboardHandler_APIDeploy_Success(t *testing.T) {
 	deployedID := ""
-	handler := NewDashboardHandler(&fakeDashboardUseCase{})
+	handler := newTestHandler(&fakeDashboardUseCase{})
 	handler.SetAppUseCase(&fakeAppUseCase{
 		deployFn: func(_ context.Context, id string) error {
 			deployedID = id

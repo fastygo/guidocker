@@ -1,0 +1,124 @@
+{{define "layout"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>{{.Title}}</title>
+	<link rel="stylesheet" href="/static/css/app.css">
+	<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0NyA0MCIgZmlsbD0iIzBlYTVlOSI+DQogICAgPHBhdGggZD0iTTIzLjUgNi41QzE3LjUgNi41IDEzLjc1IDkuNSAxMi4yNSAxNS41QzE0LjUgMTIuNSAxNy4xMjUgMTEuMzc1IDIwLjEyNSAxMi4xMjVDMjEuODM2NyAxMi41NTI5IDIzLjA2MDEgMTMuNzk0NyAyNC40MTQyIDE1LjE2OTJDMjYuNjIwMiAxNy40MDg0IDI5LjE3MzQgMjAgMzQuNzUgMjBDNDAuNzUgMjAgNDQuNSAxNyA0NiAxMUM0My43NSAxNCA0MS4xMjUgMTUuMTI1IDM4LjEyNSAxNC4zNzVDMzYuNDEzMyAxMy45NDcxIDM1LjE4OTkgMTIuNzA1MyAzMy44MzU3IDExLjMzMDhDMzEuNjI5NyA5LjA5MTU4IDI5LjA3NjYgNi41IDIzLjUgNi41Wk0xMi4yNSAyMEM2LjI1IDIwIDIuNSAyMyAxIDI5QzMuMjUgMjYgNS44NzUgMjQuODc1IDguODc1IDI1LjYyNUMxMC41ODY3IDI2LjA1MjkgMTEuODEwMSAyNy4yOTQ3IDEzLjE2NDIgMjguNjY5M0MxNS4zNzAyIDMwLjkwODQgMTcuOTIzNCAzMy41IDIzLjUgMzMuNUMyOS41IDMzLjUgMzMuMjUgMzAuNSAzNC43NSAyNC41QzMyLjUgMjcuNSAyOS44NzUgMjguNjI1IDI2Ljg3NSAyNy44NzVDMjUuMTYzMyAyNy40NDcxIDIzLjkzOTkgMjYuMjA1MyAyMi41ODU4IDI0LjgzMDdDMjAuMzc5OCAyMi41OTE2IDE3LjgyNjYgMjAgMTIuMjUgMjBaIj48L3BhdGg+DQo8L3N2Zz4=" />
+	<script>
+		(function() {
+			const root = document.documentElement;
+			const themeIcon = () => document.getElementById('theme-toggle-icon');
+			const savedTheme = localStorage.getItem('dashboard-theme');
+			const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+			const shouldUseDark = savedTheme === 'dark' || (!savedTheme && prefersDark);
+			const applyThemeIcon = function() {
+				const icon = themeIcon();
+				if (!icon) return;
+				icon.src = root.classList.contains('dark')
+					? 'https://unpkg.com/lucide-static@latest/icons/sun.svg'
+					: 'https://unpkg.com/lucide-static@latest/icons/moon.svg';
+			};
+			root.classList.toggle('dark', shouldUseDark);
+			applyThemeIcon();
+			window.toggleDashboardTheme = function() {
+				const isDark = root.classList.contains('dark');
+				const nextDark = !isDark;
+				root.classList.toggle('dark', nextDark);
+				localStorage.setItem('dashboard-theme', nextDark ? 'dark' : 'light');
+				applyThemeIcon();
+			};
+			document.addEventListener('DOMContentLoaded', applyThemeIcon);
+		})();
+	</script>
+</head>
+<body class="min-h-screen overflow-x-hidden bg-background text-foreground font-sans">
+	<div class="fixed inset-0 hidden z-30" id="mobile-sidebar-backdrop" onclick="closeMobileSidebar()" style="background: rgba(0, 0, 0, 0.45);"></div>
+	<aside class="fixed top-0 bottom-0 left-0 w-64 max-w-full border-r border-border bg-card hidden md:hidden z-40" id="mobile-sidebar">
+		<div class="px-4 py-4 border-b border-border flex items-center justify-between">
+			<div>
+				<p class="text-sm text-muted-foreground">PaaS Console</p>
+				<p class="text-lg font-semibold">Local Panel</p>
+			</div>
+			<button onclick="closeMobileSidebar()" class="rounded border border-border px-2 py-1 text-xs">Close</button>
+		</div>
+		<nav class="p-2 space-y-1">{{template "nav_mobile" .}}</nav>
+	</aside>
+	<div class="flex min-h-screen w-full">
+		<aside class="hidden md:block md:w-64 border-r border-border bg-card">
+			<div class="px-4 py-4 border-b border-border">
+				<p class="text-sm text-muted-foreground">PaaS Console</p>
+				<p class="text-lg font-semibold">Local Panel</p>
+			</div>
+			<nav class="p-2 space-y-1">{{template "nav_desktop" .}}</nav>
+		</aside>
+		<div class="flex-1 min-w-0 flex flex-col">
+			<header class="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
+				<button onclick="openMobileSidebar()" class="rounded border border-border px-2 py-1 md:hidden" aria-label="Open menu">
+					<img src="https://unpkg.com/lucide-static@latest/icons/menu.svg" alt="menu" class="h-4 w-4 dashboard-lucide-icon">
+				</button>
+				<h1 class="text-xl font-semibold truncate flex-1 px-2">{{.Title}}</h1>
+				<button onclick="toggleDashboardTheme()" class="h-8 w-8 inline-flex items-center justify-center rounded border border-border" aria-label="Toggle theme">
+					<img id="theme-toggle-icon" src="https://unpkg.com/lucide-static@latest/icons/moon.svg" alt="Theme" class="h-4 w-4 dashboard-lucide-icon">
+				</button>
+			</header>
+			<main class="w-full max-w-full min-w-0 p-4 md:p-6">
+				{{template "content" .}}
+			</main>
+		</div>
+	</div>
+	<script>
+		window.openMobileSidebar = function() {
+			const sidebar = document.getElementById('mobile-sidebar');
+			const backdrop = document.getElementById('mobile-sidebar-backdrop');
+			if (!sidebar || !backdrop) return;
+			sidebar.classList.remove('hidden');
+			backdrop.classList.remove('hidden');
+			document.body.style.overflow = 'hidden';
+		};
+		window.closeMobileSidebar = function() {
+			const sidebar = document.getElementById('mobile-sidebar');
+			const backdrop = document.getElementById('mobile-sidebar-backdrop');
+			if (!sidebar || !backdrop) return;
+			sidebar.classList.add('hidden');
+			backdrop.classList.add('hidden');
+			document.body.style.overflow = '';
+		};
+		window.addEventListener('keydown', function(event) {
+			if (event && event.key === 'Escape') closeMobileSidebar();
+		});
+		const sidebarElement = document.getElementById('mobile-sidebar');
+		if (sidebarElement) {
+			let sidebarTouchStartX = 0;
+			sidebarElement.addEventListener('touchstart', function(event) {
+				if (event.touches.length > 0) sidebarTouchStartX = event.touches[0].clientX;
+			}, { passive: true });
+			sidebarElement.addEventListener('touchend', function(event) {
+				if (!event.changedTouches || event.changedTouches.length === 0) return;
+				const touchEndX = event.changedTouches[0].clientX;
+				if (sidebarTouchStartX - touchEndX > 60) closeMobileSidebar();
+			}, { passive: true });
+		}
+		window.showComposeMessage = function(message) {
+			const composeTarget = document.getElementById('compose-status');
+			if (composeTarget) { composeTarget.textContent = message; return; }
+			const appFeedback = document.getElementById('app-feedback');
+			if (appFeedback) appFeedback.textContent = message;
+		};
+		async function updateContainerStatus(containerID, status) {
+			try {
+				const response = await fetch('/api/containers/' + encodeURIComponent(containerID), {
+					method: 'PUT',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ status }),
+				});
+				const data = await response.json();
+				if (data && data.success) location.reload();
+			} catch (err) { console.error('Action failed:', err); }
+		}
+	</script>
+</body>
+</html>
+{{end}}
