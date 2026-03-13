@@ -80,12 +80,53 @@ BOLT_DB_FILE=/opt/stacks/.paas.db \
 - UI: `http://localhost:3000`
 - Login: `http://localhost:3000/login`
 
-Для живой разработки UI через `air` можно отключить авторизацию так:
+## Development mode (Tailwind CLI + Air)
+
+Prerequisites:
 
 ```bash
 cd dashboard
-DASHBOARD_AUTH_DISABLED=true npm run dev:air
+npm install
+go install github.com/air-verse/air@latest
 ```
+
+`dashboard/package.json` scripts used in dev:
+
+- `dev:css` — `tailwindcss --watch`
+- `build:css` — one-time CSS build
+- `dev:air` — runs `dev:css` + `air` together
+
+Two-terminal flow (as requested):
+
+- **Terminal 1 (bash):**
+
+```bash
+cd dashboard
+npm run build:css
+```
+
+- **Terminal 2 (secondary):**
+
+```bash
+cd dashboard
+air
+```
+
+If you run `air` in the second terminal, do not use `npm run dev:air` there to avoid duplicate Tailwind watchers.
+
+If you prefer one terminal only, use `npm run dev:air`.
+
+If you want auth off for local iteration:
+
+```bash
+cd dashboard
+DASHBOARD_AUTH_DISABLED=true air
+```
+
+Fast checks while developing:
+
+- Open: `http://localhost:3000/apps` and `http://localhost:3000/apps/new`
+- API: `curl -u admin:admin@123 http://localhost:3000/api/apps`
 
 ## Makefile targets
 
@@ -110,6 +151,43 @@ make docker-run IMAGE_NAME=paas-dashboard IMAGE_TAG=latest \
   PAAS_ADMIN_USER=admin \
   PAAS_ADMIN_PASS='admin@123' \
   STACKS_DIR=/opt/stacks
+```
+
+### Docker runtime requirements
+
+- Run the dashboard with host Docker socket mount:
+  `-v /var/run/docker.sock:/var/run/docker.sock`.
+- Add `--group-add <host-docker-GID>` so user `paas` can access the socket.
+- Mount stacks to `/opt/stacks`, and ensure this path is writable by the container user.
+- Use `make docker-run-auto` on Linux for automatic host docker GID detection.
+
+Command example:
+
+```bash
+docker run -d \
+  --name paas-dashboard \
+  --restart unless-stopped \
+  --group-add 999 \
+  -p 3000:3000 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /opt/stacks:/opt/stacks \
+  --env PAAS_ADMIN_USER=admin \
+  --env PAAS_ADMIN_PASS=admin@123 \
+  --env STACKS_DIR=/opt/stacks \
+  paas-dashboard:latest
+```
+
+Check `paas` UID inside the image:
+
+```bash
+docker run --rm --entrypoint "" paas-dashboard:latest id -u paas
+```
+
+Make sure `/opt/stacks` is owned by that UID on the host:
+
+```bash
+HOST_PAAS_UID=$(docker run --rm --entrypoint "" paas-dashboard:latest id -u paas)
+sudo chown -R "$HOST_PAAS_UID":"$HOST_PAAS_UID" /opt/stacks
 ```
 
 ## Конфигурация

@@ -300,6 +300,8 @@ func (h *DashboardHandler) writeAppError(w http.ResponseWriter, err error) {
 		h.writeErrorResponse(w, http.StatusNotFound, "App not found")
 	case errors.Is(err, domain.ErrInvalidAppName):
 		h.writeErrorResponse(w, http.StatusBadRequest, "App name is required")
+	case errors.Is(err, domain.ErrComposeNoServices):
+		h.writeErrorResponse(w, http.StatusBadRequest, "Compose YAML must contain a 'services:' key")
 	case errors.Is(err, domain.ErrInvalidComposeYAML):
 		h.writeErrorResponse(w, http.StatusBadRequest, "Compose YAML is invalid")
 	default:

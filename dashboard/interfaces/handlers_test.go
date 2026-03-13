@@ -433,6 +433,34 @@ func TestDashboardHandler_APIApps_Create(t *testing.T) {
 	}
 }
 
+func TestDashboardHandler_APIApps_Create_NoServices_ReturnsBadRequest(t *testing.T) {
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{
+		createFn: func(_ context.Context, name, composeYAML string) (*domain.App, error) {
+			return nil, domain.ErrComposeNoServices
+		},
+	})
+
+	body := bytes.NewBufferString(`{"name":"demo","compose_yaml":"services_wrong_syntax"}`)
+	request := httptest.NewRequest(http.MethodPost, "/api/apps", body)
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	handler.APIApps(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", recorder.Result().StatusCode)
+	}
+
+	var payload map[string]string
+	if err := json.NewDecoder(recorder.Body).Decode(&payload); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if payload["error"] != "Compose YAML must contain a 'services:' key" {
+		t.Fatalf("unexpected error message: %q", payload["error"])
+	}
+}
+
 func TestDashboardHandler_APIAppDelete_Success(t *testing.T) {
 	var deletedID string
 	handler := newTestHandler(&fakeDashboardUseCase{})

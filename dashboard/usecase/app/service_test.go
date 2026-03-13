@@ -118,7 +118,7 @@ func TestService_DeleteApp_FullCleanup(t *testing.T) {
 	if err := os.MkdirAll(stackDir, 0o755); err != nil {
 		t.Fatalf("failed to create stack dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(stackDir, "docker-compose.yml"), []byte(`version: "3.9"`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(stackDir, "docker-compose.yml"), []byte(`services:`), 0o644); err != nil {
 		t.Fatalf("failed to create compose file: %v", err)
 	}
 
@@ -198,8 +198,7 @@ func TestService_CreateApp(t *testing.T) {
 	repo := newFakeAppRepository()
 	service := NewAppService(repo, &fakeDockerRepository{}, "/opt/stacks")
 
-	app, err := service.CreateApp(context.Background(), "Demo App", `version: "3.9"
-services:
+	app, err := service.CreateApp(context.Background(), "Demo App", `services:
   web:
     image: nginx:alpine
     ports:
@@ -219,6 +218,17 @@ services:
 	}
 	if len(app.Ports) != 1 || app.Ports[0] != "8080:80" {
 		t.Fatalf("unexpected ports: %+v", app.Ports)
+	}
+}
+
+func TestService_CreateApp_MissingServices(t *testing.T) {
+	repo := newFakeAppRepository()
+	service := NewAppService(repo, &fakeDockerRepository{}, "/opt/stacks")
+
+	_, err := service.CreateApp(context.Background(), "Demo App", `web:
+  image: nginx:alpine`)
+	if !errors.Is(err, domain.ErrComposeNoServices) {
+		t.Fatalf("expected ErrComposeNoServices, got %v", err)
 	}
 }
 

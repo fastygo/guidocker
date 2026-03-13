@@ -316,7 +316,7 @@ func validateAppInput(name, composeYAML string) error {
 		return domain.ErrInvalidComposeYAML
 	}
 	if !strings.Contains(composeYAML, "services:") {
-		return domain.ErrInvalidComposeYAML
+		return domain.ErrComposeNoServices
 	}
 
 	return nil

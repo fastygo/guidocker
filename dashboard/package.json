@@ -6,7 +6,7 @@
   "scripts": {
     "dev:css": "tailwindcss -i ./static/css/input.css -o ./static/css/app.css --watch",
     "build:css": "tailwindcss -i ./static/css/input.css -o ./static/css/app.css",
-    "dev:air": "concurrently -k -r \"npm run dev:css\" \"air\"",
+    "dev:air": "air",
     "clean:go": "go clean -cache -modcache -testcache",
     "clean:npm": "npm cache clean --force && npm cache verify",
     "clean:bun": "bun pm cache rm",

@@ -1,4 +1,4 @@
-.PHONY: help build release run dev clean test fmt vet lint tidy docker-build docker-run docker-stop docker-logs docker-shell
+.PHONY: help build release run dev clean test fmt vet lint tidy docker-build docker-run docker-run-auto docker-stop docker-logs docker-shell
 
 APP_NAME ?= dashboard
 PKG ?= .
@@ -16,6 +16,7 @@ IMAGE_TAG ?= latest
 IMAGE ?= $(IMAGE_NAME):$(IMAGE_TAG)
 DOCKERFILE ?= Dockerfile
 CONTAINER_NAME ?= dashboard
+DOCKER_GID ?= 999
 
 SERVER_HOST ?= 0.0.0.0
 PAAS_PORT ?= 3000
@@ -40,12 +41,14 @@ help:
 	@echo "  clean         - Remove build artifacts"
 	@echo "  docker-build  - Build Docker image $(IMAGE)"
 	@echo "  docker-run    - Run Docker container with stacks volume"
+	@echo "  docker-run-auto - Detect host docker GID and run container"
 	@echo "  docker-stop   - Stop and remove Docker container"
 	@echo "  docker-logs   - Tail Docker container logs"
 	@echo "  docker-shell  - Open shell inside the running container"
 	@echo ""
 	@echo "Variables:"
 	@echo "  IMAGE_NAME, IMAGE_TAG, CONTAINER_NAME"
+	@echo "  DOCKER_GID"
 	@echo "  PAAS_PORT, PAAS_ADMIN_USER, PAAS_ADMIN_PASS, DASHBOARD_AUTH_DISABLED"
 	@echo "  STACKS_DIR, BOLT_DB_FILE, DASHBOARD_DATA_FILE"
 
@@ -109,6 +112,7 @@ docker-run:
 	docker run -d \
 		--name $(CONTAINER_NAME) \
 		--restart unless-stopped \
+		--group-add $(DOCKER_GID) \
 		-p $(PAAS_PORT):3000 \
 		-v /var/run/docker.sock:/var/run/docker.sock \
 		-v $(STACKS_DIR):/opt/stacks \
@@ -120,6 +124,12 @@ docker-run:
 		-e STACKS_DIR=/opt/stacks \
 		-e BOLT_DB_FILE=/opt/stacks/.paas.db \
 		$(IMAGE)
+
+docker-run-auto:
+	@docker_gid=$$(getent group docker | cut -d: -f3); \
+	if [ -z "$$docker_gid" ]; then docker_gid=$(DOCKER_GID); fi; \
+	echo "Detected host docker GID: $$docker_gid"; \
+	$(MAKE) docker-run DOCKER_GID=$$docker_gid
 
 docker-stop:
 	-docker rm -f $(CONTAINER_NAME)

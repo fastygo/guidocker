@@ -86,8 +86,7 @@ func containersToAppItems(containers []domain.Container) []views.AppListItem {
 }
 
 func defaultComposeYAML() string {
-	return `version: "3.9"
-services:
+	return `services:
   app:
     image: nginx:alpine
     ports:
@@ -96,8 +95,7 @@ services:
 }
 
 func containerComposeYAML(c *domain.Container) string {
-	return `version: "3.9"
-services:
+	return `services:
   ` + c.Name + `:
     image: ` + c.Image + `
     ports:
