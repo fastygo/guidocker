@@ -29,6 +29,7 @@ type DataConfig struct {
 type AuthConfig struct {
 	AdminUser string
 	AdminPass string
+	Disabled  bool
 }
 
 // StacksConfig holds storage settings for managed stacks.
@@ -52,6 +53,7 @@ func Load() *Config {
 		Auth: AuthConfig{
 			AdminUser: getEnv("PAAS_ADMIN_USER", "admin"),
 			AdminPass: getEnv("PAAS_ADMIN_PASS", "admin@123"),
+			Disabled:  getEnvAsBoolAny([]string{"DASHBOARD_AUTH_DISABLED", "PAAS_AUTH_DISABLED"}, false),
 		},
 		Stacks: StacksConfig{
 			Dir:    stacksDir,
@@ -89,6 +91,18 @@ func getEnvAsIntAny(keys []string, fallback int) int {
 		if value := os.Getenv(key); value != "" {
 			if intVal, err := strconv.Atoi(value); err == nil {
 				return intVal
+			}
+		}
+	}
+
+	return fallback
+}
+
+func getEnvAsBoolAny(keys []string, fallback bool) bool {
+	for _, key := range keys {
+		if value := os.Getenv(key); value != "" {
+			if boolVal, err := strconv.ParseBool(value); err == nil {
+				return boolVal
 			}
 		}
 	}

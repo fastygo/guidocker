@@ -57,7 +57,13 @@ func buildServer(cfg *config.Config, useCase domain.DashboardUseCase, appUseCase
 	handler.SetLoginHandler(auth.LoginHandler())
 
 	interfaces.RegisterRoutes(mux, handler)
-	return &http.Server{Addr: cfg.GetServerAddress(), Handler: auth.Middleware()(mux)}
+
+	next := http.Handler(mux)
+	if !cfg.Auth.Disabled {
+		next = auth.Middleware()(mux)
+	}
+
+	return &http.Server{Addr: cfg.GetServerAddress(), Handler: next}
 }
 
 func main() {

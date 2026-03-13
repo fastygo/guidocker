@@ -11,6 +11,8 @@ func TestLoad_Defaults(t *testing.T) {
 	t.Setenv("DASHBOARD_DATA_FILE", "")
 	t.Setenv("PAAS_ADMIN_USER", "")
 	t.Setenv("PAAS_ADMIN_PASS", "")
+	t.Setenv("DASHBOARD_AUTH_DISABLED", "")
+	t.Setenv("PAAS_AUTH_DISABLED", "")
 	t.Setenv("STACKS_DIR", "")
 	t.Setenv("BOLT_DB_FILE", "")
 
@@ -30,6 +32,9 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.Auth.AdminPass != "admin@123" {
 		t.Fatalf("expected default admin pass admin@123, got %q", cfg.Auth.AdminPass)
 	}
+	if cfg.Auth.Disabled {
+		t.Fatalf("expected auth enabled by default")
+	}
 	if cfg.Stacks.Dir != "/opt/stacks" {
 		t.Fatalf("expected default stacks dir /opt/stacks, got %q", cfg.Stacks.Dir)
 	}
@@ -44,6 +49,7 @@ func TestLoad_EnvOverrides(t *testing.T) {
 	t.Setenv("DASHBOARD_DATA_FILE", "/tmp/dashboard.json")
 	t.Setenv("PAAS_ADMIN_USER", "root")
 	t.Setenv("PAAS_ADMIN_PASS", "secret")
+	t.Setenv("DASHBOARD_AUTH_DISABLED", "true")
 	t.Setenv("STACKS_DIR", "/srv/stacks")
 	t.Setenv("BOLT_DB_FILE", "/srv/stacks/apps.db")
 
@@ -59,6 +65,9 @@ func TestLoad_EnvOverrides(t *testing.T) {
 	}
 	if cfg.Auth.AdminUser != "root" || cfg.Auth.AdminPass != "secret" {
 		t.Fatalf("expected auth overrides to be applied, got %+v", cfg.Auth)
+	}
+	if !cfg.Auth.Disabled {
+		t.Fatalf("expected auth disabled from env flag, got enabled")
 	}
 	if cfg.Stacks.Dir != "/srv/stacks" || cfg.Stacks.DBFile != "/srv/stacks/apps.db" {
 		t.Fatalf("expected stack overrides to be applied, got %+v", cfg.Stacks)

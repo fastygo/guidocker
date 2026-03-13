@@ -80,6 +80,13 @@ BOLT_DB_FILE=/opt/stacks/.paas.db \
 - UI: `http://localhost:3000`
 - Login: `http://localhost:3000/login`
 
+Для живой разработки UI через `air` можно отключить авторизацию так:
+
+```bash
+cd dashboard
+DASHBOARD_AUTH_DISABLED=true npm run dev:air
+```
+
 ## Makefile targets
 
 Основные команды для VPS:
@@ -116,6 +123,7 @@ make docker-run IMAGE_NAME=paas-dashboard IMAGE_TAG=latest \
 | `SERVER_PORT` | `3000` | Legacy fallback port variable |
 | `PAAS_ADMIN_USER` | `admin` | Login username |
 | `PAAS_ADMIN_PASS` | `admin@123` | Login password |
+| `DASHBOARD_AUTH_DISABLED` | `false` | Disable auth middleware for local dev |
 | `STACKS_DIR` | `/opt/stacks` | Base directory for compose stacks |
 | `BOLT_DB_FILE` | `/opt/stacks/.paas.db` | BoltDB file |
 | `DASHBOARD_DATA_FILE` | `data/dashboard.json` | Legacy JSON dashboard source |
