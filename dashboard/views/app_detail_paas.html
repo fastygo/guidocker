@@ -21,6 +21,9 @@
 				<button class="px-3 py-2 rounded border border-border text-sm" onclick="runAppAction('restart')">Restart</button>
 				<button class="px-3 py-2 rounded border border-border text-sm" onclick="runAppAction('stop')">Stop</button>
 			</div>
+			<div class="mt-2">
+				<button class="px-3 py-2 rounded border border-destructive text-sm text-destructive" onclick="deleteApp()">Delete</button>
+			</div>
 			<div id="app-feedback" class="text-sm text-muted-foreground"></div>
 			<div class="flex flex-wrap gap-2">
 				<a href="/apps/{{.ID}}/compose" class="px-3 py-2 rounded border border-border text-sm">Compose</a>
@@ -40,6 +43,24 @@
 			return;
 		}
 		window.location.reload();
+	}
+
+	async function deleteApp() {
+		if (!confirm('Delete this application? All containers, volumes, and files will be permanently removed.')) {
+			return;
+		}
+
+		const feedback = document.getElementById('app-feedback');
+		if (feedback) feedback.textContent = 'Deleting...';
+
+		const response = await fetch('/api/apps/' + encodeURIComponent('{{.ID}}'), { method: 'DELETE' });
+		const payload = await response.json().catch(() => ({}));
+		if (!response.ok) {
+			if (feedback) feedback.textContent = payload.error || 'Delete failed';
+			return;
+		}
+
+		window.location.href = '/apps';
 	}
 </script>
 {{end}}

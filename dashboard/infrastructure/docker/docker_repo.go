@@ -58,6 +58,32 @@ func (r *Repository) Stop(ctx context.Context, app *domain.App) error {
 	return nil
 }
 
+func (r *Repository) Destroy(ctx context.Context, app *domain.App) error {
+	if app == nil {
+		return domain.ErrAppNotFound
+	}
+
+	composeFile := r.composeFile(app.ID, app.Dir)
+	args := []string{
+		"compose",
+		"-p", app.ID,
+		"down",
+		"--volumes",
+		"--remove-orphans",
+		"--timeout", "30",
+	}
+	if _, err := os.Stat(composeFile); err == nil {
+		args = append([]string{"compose", "-f", composeFile, "-p", app.ID}, args[2:]...)
+	}
+
+	_, err := r.run(ctx, "docker", args...)
+	if err != nil {
+		return fmt.Errorf("destroy app %s: %w", app.ID, err)
+	}
+
+	return nil
+}
+
 func (r *Repository) Restart(ctx context.Context, app *domain.App) error {
 	if app == nil {
 		return domain.ErrAppNotFound

@@ -6,6 +6,7 @@ import (
 	"dashboard/domain"
 	"encoding/hex"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -90,6 +91,23 @@ func (s *Service) UpdateApp(ctx context.Context, id, name, composeYAML string) (
 func (s *Service) DeleteApp(ctx context.Context, id string) error {
 	if s.repository == nil {
 		return domain.ErrMissingAppRepository
+	}
+
+	app, err := s.repository.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	if s.dockerRepository != nil {
+		_ = s.dockerRepository.Destroy(ctx, app)
+	}
+
+	stackDir := strings.TrimSpace(app.Dir)
+	if stackDir == "" {
+		stackDir = filepath.Join(s.stacksDir, id)
+	}
+	if stackDir != "" {
+		_ = os.RemoveAll(stackDir)
 	}
 
 	return s.repository.Delete(ctx, id)

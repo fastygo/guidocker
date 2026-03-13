@@ -4,6 +4,8 @@ import (
 	"context"
 	"dashboard/domain"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -59,6 +61,7 @@ type fakeDockerRepository struct {
 	restartFn   func(context.Context, *domain.App) error
 	getStatusFn func(context.Context, *domain.App) (string, error)
 	getLogsFn   func(context.Context, string, int) (string, error)
+	destroyFn   func(context.Context, *domain.App) error
 }
 
 func (r *fakeDockerRepository) Deploy(ctx context.Context, app *domain.App) error {
@@ -98,6 +101,97 @@ func (r *fakeDockerRepository) GetLogs(ctx context.Context, appID string, lines 
 
 func (r *fakeDockerRepository) ListRunning(context.Context) ([]domain.Container, error) {
 	return nil, nil
+}
+
+func (r *fakeDockerRepository) Destroy(ctx context.Context, app *domain.App) error {
+	if r.destroyFn != nil {
+		return r.destroyFn(ctx, app)
+	}
+
+	return nil
+}
+
+func TestService_DeleteApp_FullCleanup(t *testing.T) {
+	repo := newFakeAppRepository()
+	baseDir := t.TempDir()
+	stackDir := filepath.Join(baseDir, "app-1")
+	if err := os.MkdirAll(stackDir, 0o755); err != nil {
+		t.Fatalf("failed to create stack dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stackDir, "docker-compose.yml"), []byte(`version: "3.9"`), 0o644); err != nil {
+		t.Fatalf("failed to create compose file: %v", err)
+	}
+
+	repo.items["app-1"] = &domain.App{
+		ID:          "app-1",
+		Name:        "Demo",
+		ComposeYAML: "services:\n  web:\n    image: nginx:alpine",
+		Dir:         stackDir,
+		Status:      domain.AppStatusCreated,
+		CreatedAt:   time.Now().UTC(),
+		UpdatedAt:   time.Now().UTC(),
+	}
+
+	destroyed := false
+	service := NewAppService(repo, &fakeDockerRepository{
+		destroyFn: func(_ context.Context, app *domain.App) error {
+			destroyed = app.ID == "app-1"
+			return nil
+		},
+	}, "/opt/stacks")
+
+	if err := service.DeleteApp(context.Background(), "app-1"); err != nil {
+		t.Fatalf("DeleteApp() error = %v", err)
+	}
+
+	if !destroyed {
+		t.Fatalf("expected destroy to be called")
+	}
+	if _, err := os.Stat(stackDir); !os.IsNotExist(err) {
+		t.Fatalf("expected stack dir removed, stat error: %v", err)
+	}
+	if _, ok := repo.items["app-1"]; ok {
+		t.Fatalf("expected app removed from repository")
+	}
+}
+
+func TestService_DeleteApp_DockerErrorIgnored(t *testing.T) {
+	repo := newFakeAppRepository()
+	stackDir := filepath.Join(t.TempDir(), "app-1")
+	if err := os.MkdirAll(stackDir, 0o755); err != nil {
+		t.Fatalf("failed to create stack dir: %v", err)
+	}
+	repo.items["app-1"] = &domain.App{
+		ID:          "app-1",
+		Name:        "Demo",
+		ComposeYAML: "services:\n  web:\n    image: nginx:alpine",
+		Dir:         stackDir,
+		Status:      domain.AppStatusCreated,
+		CreatedAt:   time.Now().UTC(),
+		UpdatedAt:   time.Now().UTC(),
+	}
+
+	destroyed := false
+	service := NewAppService(repo, &fakeDockerRepository{
+		destroyFn: func(_ context.Context, app *domain.App) error {
+			destroyed = app.ID == "app-1"
+			return errors.New("docker unavailable")
+		},
+	}, "/opt/stacks")
+
+	if err := service.DeleteApp(context.Background(), "app-1"); err != nil {
+		t.Fatalf("DeleteApp() error = %v", err)
+	}
+
+	if !destroyed {
+		t.Fatalf("expected destroy to be called")
+	}
+	if _, ok := repo.items["app-1"]; ok {
+		t.Fatalf("expected app removed from repository")
+	}
+	if _, err := os.Stat(stackDir); !os.IsNotExist(err) {
+		t.Fatalf("expected stack dir removed, stat error: %v", err)
+	}
 }
 
 func TestService_CreateApp(t *testing.T) {

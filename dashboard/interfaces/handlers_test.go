@@ -433,6 +433,39 @@ func TestDashboardHandler_APIApps_Create(t *testing.T) {
 	}
 }
 
+func TestDashboardHandler_APIAppDelete_Success(t *testing.T) {
+	var deletedID string
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{
+		deleteFn: func(_ context.Context, id string) error {
+			deletedID = id
+			return nil
+		},
+	})
+
+	request := httptest.NewRequest(http.MethodDelete, "/api/apps/app-1", nil)
+	recorder := httptest.NewRecorder()
+
+	handler.APIAppRoutes(recorder, request)
+
+	response := recorder.Result()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.StatusCode)
+	}
+
+	var payload map[string]bool
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if !payload["success"] {
+		t.Fatalf("expected success=true")
+	}
+	if deletedID != "app-1" {
+		t.Fatalf("expected deleted app app-1, got %q", deletedID)
+	}
+}
+
 func TestDashboardHandler_APIDeploy_Success(t *testing.T) {
 	deployedID := ""
 	handler := newTestHandler(&fakeDashboardUseCase{})

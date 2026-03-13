@@ -19,6 +19,7 @@ type DockerRepository interface {
 	Deploy(ctx context.Context, app *App) error
 	Stop(ctx context.Context, app *App) error
 	Restart(ctx context.Context, app *App) error
+	Destroy(ctx context.Context, app *App) error
 	GetStatus(ctx context.Context, app *App) (string, error)
 	GetLogs(ctx context.Context, appID string, lines int) (string, error)
 	ListRunning(ctx context.Context) ([]Container, error)
