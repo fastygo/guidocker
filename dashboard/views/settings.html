@@ -36,12 +36,18 @@
 					<input id="certbot-auto-renew" type="checkbox" checked />
 					<span>Enable automatic renewal</span>
 				</label>
+				<p class="text-xs text-muted-foreground mt-1">
+					Platform stores this preference, but certificate renewal is expected to run on the host (for example with cron using certbot).
+					Example: <code>certbot renew --quiet --post-hook "nginx -s reload"</code>
+				</p>
 				<label class="flex items-center gap-2 text-sm">
 					<input id="certbot-terms" type="checkbox" />
 					<span>I accept Let's Encrypt terms of service</span>
 				</label>
 				<button type="button" class="px-3 py-2 rounded border border-border text-sm" onclick="saveAdminSettings()">Save admin settings</button>
 				<div id="admin-settings-feedback" class="text-sm text-muted-foreground"></div>
+				<button type="button" class="px-3 py-2 rounded border border-border text-sm" onclick="renewCertificates()">Run certificate renewal now</button>
+				<div id="certbot-renew-feedback" class="text-sm text-muted-foreground"></div>
 			</div>
 		</div>
 		<div class="rounded border border-border bg-card p-4">
@@ -50,6 +56,7 @@
 				<li>Platform exposes this config through <code>/api/settings</code>.</li>
 				<li>When domain is not set, the panel is reachable via host IP.</li>
 				<li>TLS settings are applied when the stack config is attached to a proxy.</li>
+				<li>Renewals should be driven by host-level automation (systemd timer / cron) and then reload nginx.</li>
 			</ul>
 		</div>
 	</div>
@@ -120,6 +127,19 @@
 		}
 		if (feedback) feedback.textContent = 'Settings saved';
 		await loadAdminSettings();
+	}
+
+	async function renewCertificates() {
+		const feedback = document.getElementById('certbot-renew-feedback');
+		if (feedback) feedback.textContent = 'Running renewal...';
+
+		const response = await fetch('/api/certificates/renew', { method: 'POST' });
+		const body = await response.json().catch(() => ({}));
+		if (!response.ok) {
+			if (feedback) feedback.textContent = body.error || 'Certificate renewal failed';
+			return;
+		}
+		if (feedback) feedback.textContent = body.message || 'Certificate renewal completed';
 	}
 
 	document.addEventListener('DOMContentLoaded', loadAdminSettings);

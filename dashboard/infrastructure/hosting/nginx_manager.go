@@ -13,7 +13,7 @@ import (
 const defaultNginxSitesDir = "/etc/nginx/paas.d"
 const defaultNginxBinary = "nginx"
 const managedConfigNameTemplate = "paas-app-%s.conf"
-const certBasePath = "/etc/letsencrypt/live"
+var certBasePath = "/etc/letsencrypt/live"
 
 type NginxHostManager struct {
 	binary    string
@@ -113,6 +113,27 @@ func buildNginxConfig(app domain.App) (string, error) {
 	useTLS := app.UseTLS
 	certInfo := certificateFiles(app.PublicDomain)
 	haveCert := certInfoExists(certInfo.fullChain, certInfo.privateKey)
+	httpBlock := `
+server {
+    listen 80;
+    server_name ` + domainValue + `;
+`
+	if useTLS && haveCert {
+		httpBlock += `
+    return 301 https://$host$request_uri;
+}`
+	} else {
+		httpBlock += `
+    location / {
+        proxy_pass ` + target + `;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}`
+	}
+
 	var tlsBlock string
 	if useTLS && haveCert {
 		tlsBlock = `
@@ -128,22 +149,10 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
-}
-`
+}`
 	}
 
-	return `server {
-    listen 80;
-    server_name ` + domainValue + `;
-    location / {
-        proxy_pass ` + target + `;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-` + tlsBlock, nil
+	return httpBlock + "\n" + tlsBlock, nil
 }
 
 type certFiles struct {

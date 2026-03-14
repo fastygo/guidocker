@@ -133,6 +133,37 @@ func (h *DashboardHandler) APIImport(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusCreated, app)
 }
 
+func (h *DashboardHandler) APICertbotRenew(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		h.writeMethodNotAllowed(w)
+		return
+	}
+
+	if h.certbotManager == nil {
+		h.writeErrorResponse(w, http.StatusInternalServerError, "certbot manager is not configured")
+		return
+	}
+
+	if err := h.certbotManager.RenewCertificates(r.Context()); err != nil {
+		log.Printf("Certbot renewal failed: %v", err)
+		h.writeErrorResponse(w, http.StatusInternalServerError, "Certificate renewal failed")
+		return
+	}
+
+	if h.hostManager != nil {
+		if err := h.hostManager.ReloadRouting(r.Context()); err != nil {
+			log.Printf("Nginx reload after certbot renew failed: %v", err)
+			h.writeErrorResponse(w, http.StatusInternalServerError, "Certificate renewed, but nginx reload failed")
+			return
+		}
+	}
+
+	h.writeJSON(w, http.StatusOK, map[string]any{
+		"success": true,
+		"message": "Certificate renewal completed",
+	})
+}
+
 func (h *DashboardHandler) APISettings(w http.ResponseWriter, r *http.Request) {
 	if h.platformSettingsUseCase == nil {
 		h.writeErrorResponse(w, http.StatusNotImplemented, "Platform settings are not configured")
@@ -473,6 +504,9 @@ func (h *DashboardHandler) writeAppError(w http.ResponseWriter, err error) {
 		errors.Is(err, domain.ErrInvalidAppPort),
 		errors.Is(err, domain.ErrInvalidDomain),
 		errors.Is(err, domain.ErrInvalidProxyPort),
+		errors.Is(err, domain.ErrTLSEmailRequired),
+		errors.Is(err, domain.ErrTLSAgreementRequired),
+		errors.Is(err, domain.ErrTLSRequiresCertbot),
 		errors.Is(err, domain.ErrAdminPortConflict),
 		errors.Is(err, domain.ErrDomainConflict),
 		errors.Is(err, domain.ErrManualCleanupRequired),

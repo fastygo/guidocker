@@ -57,6 +57,59 @@ func TestNginxHostManager_ApplyRemoveAndLifecycle(t *testing.T) {
 	}
 }
 
+func TestNginxHostManager_GeneratesHTTPRedirectWhenTLSReady(t *testing.T) {
+	tempDir := t.TempDir()
+	certDir := t.TempDir()
+	ctx := context.Background()
+	manager := NewNginxHostManagerWithOptions("nginx", tempDir)
+	manager.runScript = func(_ context.Context, name string, args ...string) ([]byte, error) {
+		return []byte(name + " " + strings.Join(args, " ")), nil
+	}
+	originalCertBasePath := certBasePath
+	certBasePath = certDir
+	defer func() {
+		certBasePath = originalCertBasePath
+	}()
+
+	domainName := "app.example.com"
+	certDomainPath := filepath.Join(certDir, domainName)
+	if err := os.MkdirAll(certDomainPath, 0o755); err != nil {
+		t.Fatalf("failed to create cert dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(certDomainPath, "fullchain.pem"), []byte("certificate"), 0o644); err != nil {
+		t.Fatalf("failed to write fullchain: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(certDomainPath, "privkey.pem"), []byte("private key"), 0o644); err != nil {
+		t.Fatalf("failed to write privkey: %v", err)
+	}
+
+	app := &domain.App{
+		ID:             "app-2",
+		PublicDomain:    domainName,
+		ProxyTargetPort: 8080,
+		UseTLS:          true,
+	}
+	if err := manager.ApplyRouting(ctx, app, domain.PlatformSettings{}); err != nil {
+		t.Fatalf("ApplyRouting() error = %v", err)
+	}
+
+	configPath := filepath.Join(tempDir, "paas-app-app-2.conf")
+	contents, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("expected config file to exist: %v", err)
+	}
+	configText := string(contents)
+	if !strings.Contains(configText, "return 301 https://$host$request_uri;") {
+		t.Fatalf("expected HTTP redirect, got %q", configText)
+	}
+	if !strings.Contains(configText, "listen 443 ssl;") {
+		t.Fatalf("expected HTTPS server block, got %q", configText)
+	}
+	if !strings.Contains(configText, "ssl_certificate "+filepath.Join(certDomainPath, "fullchain.pem")) {
+		t.Fatalf("expected cert path, got %q", configText)
+	}
+}
+
 func TestNginxHostManager_ApplyRouting_RequiresDomainAndPort(t *testing.T) {
 	t.Parallel()
 

@@ -28,4 +28,7 @@ var (
 	ErrComposeConfigValidation = errors.New("compose file validation failed")
 	ErrReservedIngressPort     = errors.New("reserved ingress port in compose mapping")
 	ErrManualCleanupRequired   = errors.New("manual cleanup required before delete")
+	ErrTLSRequiresCertbot      = errors.New("TLS requires certificate management via certbot")
+	ErrTLSEmailRequired        = errors.New("TLS requires certbot email to be configured")
+	ErrTLSAgreementRequired    = errors.New("TLS requires certbot terms agreement")
 )

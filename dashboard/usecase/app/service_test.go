@@ -469,6 +469,128 @@ func TestService_UpdateAppConfig_DetectsDomainConflict(t *testing.T) {
 	}
 }
 
+func TestService_UpdateAppConfig_RejectsTLSWithoutCertbotSettings(t *testing.T) {
+	repo := newFakeAppRepository()
+	baseDir := t.TempDir()
+	repo.items["app-1"] = &domain.App{
+		ID:          "app-1",
+		Name:        "Demo",
+		ComposeYAML: "services:\n  web:\n    image: nginx:alpine",
+		Dir:         filepath.Join(baseDir, "app-1"),
+		Status:      domain.AppStatusCreated,
+		CreatedAt:   time.Now().UTC(),
+		UpdatedAt:   time.Now().UTC(),
+	}
+
+	service := NewAppService(repo, &fakeDockerRepository{}, nil, baseDir).
+		WithPlatformSettingsUseCase(&fakePlatformSettingsUseCase{
+			settings: &domain.PlatformSettings{},
+		})
+
+	_, err := service.UpdateAppConfig(context.Background(), "app-1", domain.AppConfig{
+		PublicDomain:    "app.example.com",
+		ProxyTargetPort: 8080,
+		UseTLS:          true,
+	})
+	if !errors.Is(err, domain.ErrTLSRequiresCertbot) {
+		t.Fatalf("expected ErrTLSRequiresCertbot, got %v", err)
+	}
+}
+
+func TestService_UpdateAppConfig_RejectsTLSWithoutCertbotEmail(t *testing.T) {
+	repo := newFakeAppRepository()
+	baseDir := t.TempDir()
+	repo.items["app-1"] = &domain.App{
+		ID:          "app-1",
+		Name:        "Demo",
+		ComposeYAML: "services:\n  web:\n    image: nginx:alpine",
+		Dir:         filepath.Join(baseDir, "app-1"),
+		Status:      domain.AppStatusCreated,
+		CreatedAt:   time.Now().UTC(),
+		UpdatedAt:   time.Now().UTC(),
+	}
+
+	service := NewAppService(repo, &fakeDockerRepository{}, nil, baseDir).
+		WithPlatformSettingsUseCase(&fakePlatformSettingsUseCase{
+			settings: &domain.PlatformSettings{
+				CertbotEnabled:       true,
+				CertbotTermsAccepted: true,
+			},
+		})
+
+	_, err := service.UpdateAppConfig(context.Background(), "app-1", domain.AppConfig{
+		PublicDomain:    "app.example.com",
+		ProxyTargetPort: 8080,
+		UseTLS:          true,
+	})
+	if !errors.Is(err, domain.ErrTLSEmailRequired) {
+		t.Fatalf("expected ErrTLSEmailRequired, got %v", err)
+	}
+}
+
+func TestService_UpdateAppConfig_RejectsTLSWithoutTermsAcceptance(t *testing.T) {
+	repo := newFakeAppRepository()
+	baseDir := t.TempDir()
+	repo.items["app-1"] = &domain.App{
+		ID:          "app-1",
+		Name:        "Demo",
+		ComposeYAML: "services:\n  web:\n    image: nginx:alpine",
+		Dir:         filepath.Join(baseDir, "app-1"),
+		Status:      domain.AppStatusCreated,
+		CreatedAt:   time.Now().UTC(),
+		UpdatedAt:   time.Now().UTC(),
+	}
+
+	service := NewAppService(repo, &fakeDockerRepository{}, nil, baseDir).
+		WithPlatformSettingsUseCase(&fakePlatformSettingsUseCase{
+			settings: &domain.PlatformSettings{
+				CertbotEnabled: true,
+				CertbotEmail:   "ops@example.com",
+			},
+		})
+
+	_, err := service.UpdateAppConfig(context.Background(), "app-1", domain.AppConfig{
+		PublicDomain:    "app.example.com",
+		ProxyTargetPort: 8080,
+		UseTLS:          true,
+	})
+	if !errors.Is(err, domain.ErrTLSAgreementRequired) {
+		t.Fatalf("expected ErrTLSAgreementRequired, got %v", err)
+	}
+}
+
+func TestService_UpdateAppConfig_AllowsTLSWhenPrerequisitesMet(t *testing.T) {
+	repo := newFakeAppRepository()
+	baseDir := t.TempDir()
+	repo.items["app-1"] = &domain.App{
+		ID:          "app-1",
+		Name:        "Demo",
+		ComposeYAML: "services:\n  web:\n    image: nginx:alpine",
+		Dir:         filepath.Join(baseDir, "app-1"),
+		Status:      domain.AppStatusCreated,
+		CreatedAt:   time.Now().UTC(),
+		UpdatedAt:   time.Now().UTC(),
+	}
+
+	service := NewAppService(repo, &fakeDockerRepository{}, nil, baseDir).
+		WithPlatformSettingsUseCase(&fakePlatformSettingsUseCase{
+			settings: &domain.PlatformSettings{
+				CertbotEnabled:       true,
+				CertbotEmail:         "ops@example.com",
+				CertbotTermsAccepted: true,
+			},
+		})
+
+	_, err := service.UpdateAppConfig(context.Background(), "app-1", domain.AppConfig{
+		PublicDomain:    "app.example.com",
+		ProxyTargetPort: 8080,
+		UseTLS:          true,
+	})
+	if err != nil {
+		t.Fatalf("UpdateAppConfig() error = %v", err)
+	}
+}
+
 func TestService_DeleteApp_AggregatesCleanupErrorsButCleansManagedArtifacts(t *testing.T) {
 	repo := newFakeAppRepository()
 	baseDir := t.TempDir()

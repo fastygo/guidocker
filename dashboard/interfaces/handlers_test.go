@@ -181,6 +181,28 @@ func (m *fakeAppUseCase) GetAppLogs(ctx context.Context, app *domain.App, lines 
 	return "", nil
 }
 
+type fakeCertbotManager struct {
+	renewFn func(context.Context) error
+}
+
+func (m *fakeCertbotManager) RenewCertificates(ctx context.Context) error {
+	if m.renewFn != nil {
+		return m.renewFn(ctx)
+	}
+	return nil
+}
+
+type fakeHostManager struct {
+	reloadFn func(context.Context) error
+}
+
+func (m *fakeHostManager) ReloadRouting(ctx context.Context) error {
+	if m.reloadFn != nil {
+		return m.reloadFn(ctx)
+	}
+	return nil
+}
+
 func TestDashboardHandler_Dashboard_RendersHTML(t *testing.T) {
 	useCase := &fakeDashboardUseCase{
 		data: &domain.DashboardData{
@@ -591,6 +613,29 @@ func TestDashboardHandler_APIAppDelete_ManualCleanupRequired(t *testing.T) {
 	}
 }
 
+func TestDashboardHandler_APIAppConfig_UpdateTLSWithoutEmailReturnsBadRequest(t *testing.T) {
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{
+		updateConfigFn: func(_ context.Context, id string, _ domain.AppConfig) (*domain.App, error) {
+			if id != "app-1" {
+				t.Fatalf("expected app id app-1, got %q", id)
+			}
+			return nil, domain.ErrTLSEmailRequired
+		},
+	})
+
+	body := strings.NewReader(`{"public_domain":"app.example.com","proxy_target_port":8080,"use_tls":true}`)
+	request := httptest.NewRequest(http.MethodPut, "/api/apps/app-1/config", body)
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	handler.APIAppConfig(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, recorder.Result().StatusCode)
+	}
+}
+
 func TestDashboardHandler_APIImport_Create(t *testing.T) {
 	handler := newTestHandler(&fakeDashboardUseCase{})
 	handler.SetAppUseCase(&fakeAppUseCase{
@@ -766,6 +811,38 @@ func TestDashboardHandler_APISettings_Put(t *testing.T) {
 	}
 	if saved.AdminPort != 3200 || !saved.AdminUseTLS || !saved.CertbotEnabled {
 		t.Fatalf("unexpected saved settings: %+v", saved)
+	}
+}
+
+func TestDashboardHandler_APICertbotRenew_Post(t *testing.T) {
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	renewCalled := false
+	reloadCalled := false
+	handler.certbotManager = &fakeCertbotManager{
+		renewFn: func(_ context.Context) error {
+			renewCalled = true
+			return nil
+		},
+	}
+	handler.hostManager = &fakeHostManager{
+		reloadFn: func(_ context.Context) error {
+			reloadCalled = true
+			return nil
+		},
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/api/certificates/renew", nil)
+	recorder := httptest.NewRecorder()
+	handler.APICertbotRenew(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Result().StatusCode)
+	}
+	if !renewCalled {
+		t.Fatalf("expected certbot renew to be called")
+	}
+	if !reloadCalled {
+		t.Fatalf("expected nginx reload to be called")
 	}
 }
 

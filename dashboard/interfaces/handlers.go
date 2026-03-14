@@ -1,6 +1,7 @@
 package interfaces
 
 import (
+	"context"
 	"dashboard/domain"
 	"dashboard/views"
 	"encoding/json"
@@ -17,8 +18,18 @@ type DashboardHandler struct {
 	appUseCase       domain.AppUseCase
 	scanUseCase      domain.ScannerUseCase
 	platformSettingsUseCase domain.PlatformSettingsUseCase
+	certbotManager   certbotManager
+	hostManager      certReloadManager
 	loginHandler     http.HandlerFunc
 	renderer         *views.Renderer
+}
+
+type certbotManager interface {
+	RenewCertificates(context.Context) error
+}
+
+type certReloadManager interface {
+	ReloadRouting(context.Context) error
 }
 
 // NewDashboardHandler creates a new dashboard handler
@@ -203,6 +214,11 @@ func (h *DashboardHandler) SetScanUseCase(useCase domain.ScannerUseCase) {
 // SetPlatformSettingsUseCase attaches platform-level settings use case.
 func (h *DashboardHandler) SetPlatformSettingsUseCase(useCase domain.PlatformSettingsUseCase) {
 	h.platformSettingsUseCase = useCase
+}
+
+func (h *DashboardHandler) SetCertificateOperations(renewManager certbotManager, hostManager certReloadManager) {
+	h.certbotManager = renewManager
+	h.hostManager = hostManager
 }
 
 // SetLoginHandler attaches a dedicated login handler.

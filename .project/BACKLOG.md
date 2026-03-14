@@ -1,12 +1,72 @@
 # Backlog
 
-## Done
+## Stable Baseline Delivered
+
+These items are already delivered in the current pre-`Project` / pre-`Service` stable baseline and should not be re-planned as new work.
 
 - [x] App deletion via `DELETE /api/apps/{id}`
 - [x] Safe self-removal flow for the admin panel
 - [x] Keep deployed apps running after removing the GUI
 - [x] Read-only Scanner for discovered manual Docker resources
 - [x] Public Git repo import with Compose-first flow and Dockerfile fallback
+- [x] Persistent admin endpoint settings: host IP, port, optional domain, and TLS mode
+- [x] Bare IP admin panel support without requiring a domain
+- [x] One public domain and one proxy target port per app
+- [x] Reserve `80` and `443` for platform ingress instead of direct app binding
+- [x] Platform-managed `Nginx` routing for app domains
+- [x] Managed environment variables persisted per app and materialized into `.platform.env`
+- [x] `Certbot` certificate issuance for app domains
+- [x] Certificate renewal path with host-managed execution
+- [x] Domain conflict, proxy port conflict, and TLS prerequisite validation
+- [x] Safe delete preflight for shared or external resources
+- [x] Conditional certificate removal only when the certificate is not shared
+- [x] App detail visibility for URL, proxy port, TLS status, env summary, logs, and runtime state
+
+## Deferred From Stable Baseline
+
+These items were intentionally left out of the first stable cutoff and belong to later planning.
+
+- [ ] Optional admin-domain TLS with full routing and certificate reconciliation
+- [ ] Basic health or reachability status for proxied apps
+- [ ] In-place app updates that preserve domain and env settings
+- [ ] Backup and restore for stateful apps
+- [ ] Rich routing previews before save
+- [ ] Extended scanner coverage for proxy and certificate leftovers
+- [ ] Final production-hardening validation pass before declaring the stable baseline fully closed
+
+## Architecture Improvement Plan
+
+These improvements are not blockers for the current stable baseline, but they should guide the next refactor so the platform stays flexible and scalable as it grows beyond the single-`App` model.
+
+### Layer Boundaries
+
+- [ ] Move pure business entities and domain rules into a stricter domain core with fewer mixed responsibilities
+- [ ] Separate application contracts and orchestration interfaces from the pure domain layer where helpful
+- [ ] Keep infrastructure details out of business-facing contracts unless they are part of an intentional port
+
+### Application Services
+
+- [ ] Split the current app lifecycle service into smaller focused services such as import, deploy, routing, env management, and cleanup coordination
+- [ ] Introduce explicit orchestration services for cross-cutting operational flows instead of expanding one large service
+- [ ] Keep lifecycle rules testable through narrow interfaces and isolated business scenarios
+
+### Delivery Layer
+
+- [ ] Separate HTML page handlers, JSON API handlers, and operational endpoints into clearer delivery modules
+- [ ] Keep HTTP handlers thin and focused on transport concerns: parsing, validation, response mapping, and auth boundaries
+- [ ] Avoid letting delivery code call infrastructure operations directly when an application service can coordinate the flow
+
+### Infrastructure and Composition
+
+- [ ] Keep composition centralized in the application entrypoint so dependencies remain explicit and replaceable
+- [ ] Continue isolating Docker, Git, BoltDB, Nginx, and Certbot behind stable interfaces
+- [ ] Add clearer boundaries between platform runtime adapters and business orchestration logic
+
+### Growth Readiness
+
+- [ ] Refactor around the future `Project` / `Service` model without breaking the stable single-`App` baseline
+- [ ] Preserve the current admin panel as a valid reference implementation of a pragmatic layered backend
+- [ ] Keep the architecture suitable as a teaching case for layered backend design, even if it is not a fully academic clean-architecture example
 
 ## Product Principles
 

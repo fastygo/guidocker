@@ -68,6 +68,7 @@ func buildServer(
 	handler.SetAppUseCase(appUseCase)
 	handler.SetScanUseCase(scanUseCase)
 	handler.SetPlatformSettingsUseCase(platformSettingsUseCase)
+	handler.SetCertificateOperations(hosting.NewCertbotManager(), hosting.NewNginxHostManager())
 	handler.SetLoginHandler(auth.LoginHandler())
 
 	interfaces.RegisterRoutes(mux, handler)

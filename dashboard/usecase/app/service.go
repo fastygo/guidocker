@@ -1249,6 +1249,10 @@ func (s *Service) validateAppConfig(ctx context.Context, app *domain.App, config
 		return domain.ErrInvalidProxyPort
 	}
 
+	if err := s.validateTLSPrerequisites(ctx, domainValue, config.UseTLS); err != nil {
+		return err
+	}
+
 	if domainValue != "" && config.ProxyTargetPort > 0 {
 		settings, _, err := s.loadPlatformSettings(ctx)
 		if err != nil {
@@ -1279,6 +1283,30 @@ func (s *Service) validateAppConfig(ctx context.Context, app *domain.App, config
 		}
 	}
 
+	return nil
+}
+
+func (s *Service) validateTLSPrerequisites(ctx context.Context, domainValue string, useTLS bool) error {
+	if !useTLS || domainValue == "" {
+		return nil
+	}
+	if s.platformSettings == nil {
+		return nil
+	}
+
+	settings, _, err := s.loadPlatformSettings(ctx)
+	if err != nil {
+		return err
+	}
+	if !settings.CertbotEnabled {
+		return domain.ErrTLSRequiresCertbot
+	}
+	if strings.TrimSpace(settings.CertbotEmail) == "" {
+		return domain.ErrTLSEmailRequired
+	}
+	if !settings.CertbotTermsAccepted {
+		return domain.ErrTLSAgreementRequired
+	}
 	return nil
 }
 
@@ -1367,6 +1395,9 @@ func (s *Service) reconcileRouting(ctx context.Context, app *domain.App, previou
 		if err := s.hostManager.ApplyRouting(ctx, app, settings); err != nil {
 			return err
 		}
+	}
+	if err := s.hostManager.ValidateRouting(ctx); err != nil {
+		return err
 	}
 	return s.hostManager.ReloadRouting(ctx)
 }

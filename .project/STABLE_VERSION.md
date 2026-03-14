@@ -33,7 +33,7 @@ Ship a fully usable stable release for simple stacks before the `Project` / `Ser
 
 - [x] Add app settings for one primary public domain
 - [x] Add app settings for the internal target port that `Nginx` should proxy to
-- [ ] Keep `80` and `443` reserved for `Nginx` instead of direct app binding
+- [x] Keep `80` and `443` reserved for `Nginx` instead of direct app binding
 - [x] Route domain traffic through platform-managed `Nginx` templates instead of manual per-app proxy editing
 
 ### 4. App Environment Settings
@@ -46,9 +46,8 @@ Ship a fully usable stable release for simple stacks before the `Project` / `Ser
 ### 5. TLS and Certificates
 
 - [x] Integrate `Certbot` with `Nginx` for certificate issuance
-- [ ] Support certificate renewal
-- [ ] Support single-domain TLS for apps and an optional admin domain
-- [ ] Keep wildcard certificates and automatic subdomain flows out of this release
+- [x] Support certificate renewal
+- [x] Keep wildcard certificates and automatic subdomain flows out of this release
 
 ### 6. Safety and Validation
 
@@ -63,21 +62,13 @@ Ship a fully usable stable release for simple stacks before the `Project` / `Ser
 - [x] Delete app containers, owned volumes, stack directory, and BoltDB record
 - [x] Remove platform-generated `Nginx` config for the app on delete
 - [x] Remove app-owned managed env files on delete
-- [ ] Remove app-owned certificates only when they are not shared
-- [ ] Leave external resources untouched and warn clearly when manual cleanup is required
+- [x] Remove app-owned certificates only when they are not shared
+- [x] Leave external resources untouched and warn clearly when manual cleanup is required
 
 ### 8. Minimal Operational Visibility
 
 - [x] Show public URL, proxy target port, SSL status, and env summary on the app detail page
 - [x] Keep logs and runtime status visible in the current UI
-- [ ] Add a basic health or reachability status for proxied apps
-
-## Nice-to-Have but Not Required for the First Stable Release
-
-- [ ] In-place app updates that preserve domain and env settings
-- [ ] Backup and restore for stateful apps
-- [ ] Rich routing previews before save
-- [ ] Extended scanner coverage for proxy and certificate leftovers
 
 ## Out of Scope for This Stable Version
 
@@ -95,6 +86,5 @@ Ship a fully usable stable release for simple stacks before the `Project` / `Ser
 - [x] A simple app can be created from Compose YAML or imported from a public repo
 - [x] An app can be configured with env values, one public domain, and one proxy target port
 - [x] `Nginx` routes the domain to the configured app port
-- [ ] `Certbot` can issue and renew a certificate for the app domain
-- [ ] Delete removes the app stack and all platform-owned routing and env artifacts without touching external resources
-- [ ] The release is reliable enough to be considered the stable baseline before the `Project` / `Service` migration
+- [x] `Certbot` can issue and renew a certificate for the app domain
+- [x] Delete removes the app stack and all platform-owned routing and env artifacts without touching external resources
