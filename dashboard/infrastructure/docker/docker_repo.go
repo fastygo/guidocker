@@ -32,6 +32,9 @@ func (r *Repository) Deploy(ctx context.Context, app *domain.App) error {
 	}
 
 	composeFile := r.composeFile(app)
+	if err := r.ensureComposeSource(app, composeFile); err != nil {
+		return fmt.Errorf("prepare compose file: %w", err)
+	}
 	if err := os.MkdirAll(filepath.Dir(composeFile), 0o755); err != nil {
 		return fmt.Errorf("create app directory: %w", err)
 	}
@@ -53,6 +56,11 @@ func (r *Repository) Stop(ctx context.Context, app *domain.App) error {
 		return domain.ErrAppNotFound
 	}
 
+	composeFile := r.composeFile(app)
+	if err := r.ensureComposeSource(app, composeFile); err != nil {
+		return fmt.Errorf("prepare compose file: %w", err)
+	}
+
 	args := r.composeCommandArgs(app, "down")
 	_, err := r.run(ctx, "docker", args...)
 	if err != nil {
@@ -67,6 +75,11 @@ func (r *Repository) Destroy(ctx context.Context, app *domain.App) error {
 		return domain.ErrAppNotFound
 	}
 
+	composeFile := r.composeFile(app)
+	if err := r.ensureComposeSource(app, composeFile); err != nil {
+		return fmt.Errorf("prepare compose file: %w", err)
+	}
+
 	args := r.composeCommandArgs(app, "down", "--volumes", "--remove-orphans", "--timeout", "30")
 	_, err := r.run(ctx, "docker", args...)
 	if err != nil {
@@ -79,6 +92,11 @@ func (r *Repository) Destroy(ctx context.Context, app *domain.App) error {
 func (r *Repository) Restart(ctx context.Context, app *domain.App) error {
 	if app == nil {
 		return domain.ErrAppNotFound
+	}
+
+	composeFile := r.composeFile(app)
+	if err := r.ensureComposeSource(app, composeFile); err != nil {
+		return fmt.Errorf("prepare compose file: %w", err)
 	}
 
 	args := r.composeCommandArgs(app, "restart")
@@ -96,6 +114,9 @@ func (r *Repository) GetStatus(ctx context.Context, app *domain.App) (string, er
 	}
 
 	composeFile := r.composeFile(app)
+	if err := r.ensureComposeSource(app, composeFile); err != nil {
+		return "", err
+	}
 	if _, err := os.Stat(composeFile); err != nil {
 		if os.IsNotExist(err) {
 			return domain.AppStatusStopped, nil
@@ -114,6 +135,10 @@ func (r *Repository) GetStatus(ctx context.Context, app *domain.App) (string, er
 func (r *Repository) GetLogs(ctx context.Context, app *domain.App, lines int) (string, error) {
 	if app == nil {
 		return "", domain.ErrAppNotFound
+	}
+
+	if err := r.ensureComposeSource(app, r.composeFile(app)); err != nil {
+		return "", fmt.Errorf("prepare compose file: %w", err)
 	}
 
 	output, err := r.run(ctx, "docker", r.composeCommandArgs(app, "logs", "--tail", strconv.Itoa(lines), "--no-color")...)
@@ -217,6 +242,31 @@ func (r *Repository) composeFile(app *domain.App) string {
 	}
 
 	return filepath.Join(appDir, "docker-compose.yml")
+}
+
+func (r *Repository) ensureComposeSource(app *domain.App, composeFile string) error {
+	if app == nil {
+		return domain.ErrAppNotFound
+	}
+
+	if _, err := os.Stat(composeFile); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	composeContent := strings.TrimSpace(app.ComposeYAML)
+	if composeContent == "" {
+		return domain.ErrInvalidComposeYAML
+	}
+
+	if err := os.MkdirAll(filepath.Dir(composeFile), 0o755); err != nil {
+		return fmt.Errorf("create app directory: %w", err)
+	}
+	if err := os.WriteFile(composeFile, []byte(app.ComposeYAML), 0o644); err != nil {
+		return fmt.Errorf("write compose file: %w", err)
+	}
+	return nil
 }
 
 func (r *Repository) composeEnvFile(app *domain.App) string {

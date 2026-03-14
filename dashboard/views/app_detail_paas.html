@@ -19,13 +19,16 @@
 			<label class="block text-sm text-muted-foreground">Public domain
 				<input id="app-public-domain" type="text" class="mt-1 w-full rounded border border-border bg-background px-2 py-2 text-sm" placeholder="app.example.com" />
 			</label>
+			<p class="text-xs text-muted-foreground">Traffic starts as HTTP by default on the configured domain.</p>
 			<label class="block text-sm text-muted-foreground">Proxy target port
 				<input id="app-proxy-target-port" type="number" min="1" max="65535" class="mt-1 w-full rounded border border-border bg-background px-2 py-2 text-sm" placeholder="3000" />
 			</label>
+			<p class="text-xs text-muted-foreground">Use the port that is exposed by the app container and reachable from the host.</p>
 			<label class="flex items-center gap-2 text-sm">
 				<input id="app-use-tls" type="checkbox" />
 				<span>Enable HTTPS on proxy</span>
 			</label>
+			<p class="text-xs text-muted-foreground">Enable HTTPS only after valid Let's Encrypt settings are configured; otherwise the app remains available on HTTP.</p>
 			<label class="block text-sm text-muted-foreground">Managed environment variables
 				<textarea id="app-managed-env" class="mt-1 w-full rounded border border-border bg-background p-2 text-sm" rows="6" placeholder="KEY=value\nANOTHER=value"></textarea>
 			</label>

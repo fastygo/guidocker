@@ -114,8 +114,14 @@ docker-run:
 		--restart unless-stopped \
 		--group-add $(DOCKER_GID) \
 		-p $(PAAS_PORT):3000 \
+		-p 80:80 \
+		-p 443:443 \
 		-v /var/run/docker.sock:/var/run/docker.sock \
 		-v $(STACKS_DIR):/opt/stacks \
+		-v $(STACKS_DIR)/letsencrypt/etc:/etc/letsencrypt \
+		-v $(STACKS_DIR)/letsencrypt/lib:/var/lib/letsencrypt \
+		-v $(STACKS_DIR)/letsencrypt/log:/var/log/letsencrypt \
+		--add-host=host.docker.internal:host-gateway \
 		-e SERVER_HOST=0.0.0.0 \
 		-e PAAS_PORT=3000 \
 		-e PAAS_ADMIN_USER=$(PAAS_ADMIN_USER) \
@@ -123,6 +129,10 @@ docker-run:
 		-e DASHBOARD_AUTH_DISABLED=$(DASHBOARD_AUTH_DISABLED) \
 		-e STACKS_DIR=/opt/stacks \
 		-e BOLT_DB_FILE=/opt/stacks/.paas.db \
+		-e PAAS_PROXY_UPSTREAM_HOST=host.docker.internal \
+		-e PAAS_NGINX_BINARY=nginx \
+		-e PAAS_NGINX_SITES_DIR=/etc/nginx/conf.d \
+		-e PAAS_CERTBOT_BINARY=certbot \
 		$(IMAGE)
 
 docker-run-auto:

@@ -15,7 +15,7 @@ func TestNginxHostManager_ApplyRemoveAndLifecycle(t *testing.T) {
 
 	tempDir := t.TempDir()
 	ctx := context.Background()
-	manager := NewNginxHostManagerWithOptions("nginx", tempDir)
+	manager := NewNginxHostManagerWithOptions("nginx", tempDir, "host.docker.internal")
 	manager.runScript = func(_ context.Context, name string, args ...string) ([]byte, error) {
 		return []byte(name + " " + strings.Join(args, " ")), nil
 	}
@@ -38,7 +38,7 @@ func TestNginxHostManager_ApplyRemoveAndLifecycle(t *testing.T) {
 	if got := string(contents); !strings.Contains(got, "server_name app.example.com") {
 		t.Fatalf("expected config to contain server name, got %q", got)
 	}
-	if got := string(contents); !strings.Contains(got, "127.0.0.1:8080") {
+	if got := string(contents); !strings.Contains(got, "host.docker.internal:8080") {
 		t.Fatalf("expected config to contain upstream target, got %q", got)
 	}
 
@@ -57,11 +57,39 @@ func TestNginxHostManager_ApplyRemoveAndLifecycle(t *testing.T) {
 	}
 }
 
+func TestNginxHostManager_AppliesCustomUpstreamHost(t *testing.T) {
+	tempDir := t.TempDir()
+	ctx := context.Background()
+	manager := NewNginxHostManagerWithOptions("nginx", tempDir, "custom.internal")
+	manager.runScript = func(_ context.Context, name string, args ...string) ([]byte, error) {
+		return []byte(name + " " + strings.Join(args, " ")), nil
+	}
+
+	app := &domain.App{
+		ID:              "custom-host-app",
+		PublicDomain:    "custom.internal.example",
+		ProxyTargetPort: 9090,
+		UseTLS:          false,
+	}
+	if err := manager.ApplyRouting(ctx, app, domain.PlatformSettings{}); err != nil {
+		t.Fatalf("ApplyRouting() error = %v", err)
+	}
+
+	configPath := filepath.Join(tempDir, "paas-app-custom-host-app.conf")
+	contents, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("expected config file to exist: %v", err)
+	}
+	if got := string(contents); !strings.Contains(got, "custom.internal:9090") {
+		t.Fatalf("expected config to contain custom upstream host, got %q", got)
+	}
+}
+
 func TestNginxHostManager_GeneratesHTTPRedirectWhenTLSReady(t *testing.T) {
 	tempDir := t.TempDir()
 	certDir := t.TempDir()
 	ctx := context.Background()
-	manager := NewNginxHostManagerWithOptions("nginx", tempDir)
+	manager := NewNginxHostManagerWithOptions("nginx", tempDir, "host.docker.internal")
 	manager.runScript = func(_ context.Context, name string, args ...string) ([]byte, error) {
 		return []byte(name + " " + strings.Join(args, " ")), nil
 	}
@@ -115,7 +143,7 @@ func TestNginxHostManager_ApplyRouting_RequiresDomainAndPort(t *testing.T) {
 
 	tempDir := t.TempDir()
 	ctx := context.Background()
-	manager := NewNginxHostManagerWithOptions("nginx", tempDir)
+	manager := NewNginxHostManagerWithOptions("nginx", tempDir, "host.docker.internal")
 	manager.runScript = func(_ context.Context, name string, args ...string) ([]byte, error) {
 		t.Fatalf("unexpected runScript call: %s %v", name, args)
 		return nil, nil

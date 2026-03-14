@@ -152,6 +152,9 @@ make docker-run IMAGE_NAME=paas-dashboard IMAGE_TAG=latest \
 - Mount host Docker socket: `-v /var/run/docker.sock:/var/run/docker.sock`
 - Add `--group-add <host-docker-GID>` so the container user can access the socket
 - Mount stacks to `/opt/stacks` (writable by the container user)
+- Publish ingress ports: `-p 80:80` and `-p 443:443`
+- Add host routing entry: `--add-host=host.docker.internal:host-gateway`
+- Keep certificate paths persistent: `/opt/stacks/letsencrypt`
 - Use `make docker-run-auto` on Linux for automatic host docker GID detection
 
 **Example:**
@@ -161,21 +164,26 @@ docker run -d \
   --name paas-dashboard \
   --restart unless-stopped \
   --group-add 999 \
+  -p 80:80 \
+  -p 443:443 \
   -p 3000:3000 \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v /opt/stacks:/opt/stacks \
+  -v /opt/stacks/letsencrypt/etc:/etc/letsencrypt \
+  -v /opt/stacks/letsencrypt/lib:/var/lib/letsencrypt \
+  -v /opt/stacks/letsencrypt/log:/var/log/letsencrypt \
+  --add-host=host.docker.internal:host-gateway \
   --env PAAS_ADMIN_USER=admin \
   --env PAAS_ADMIN_PASS=admin@123 \
   --env STACKS_DIR=/opt/stacks \
+  --env PAAS_PROXY_UPSTREAM_HOST=host.docker.internal \
   paas-dashboard:latest
 ```
 
-**Ensure `/opt/stacks` ownership:**
+**Optional ownership alignment for custom users:**
 
-```bash
-HOST_PAAS_UID=$(docker run --rm --entrypoint "" paas-dashboard:latest id -u paas)
-sudo chown -R "$HOST_PAAS_UID":"$HOST_PAAS_UID" /opt/stacks
-```
+The container currently runs as root, so `/opt/stacks` just needs to be writable by root inside the container.
+If you switch to a custom runtime user, ensure the host mount points are writable by that user.
 
 ## Configuration
 
@@ -190,6 +198,10 @@ sudo chown -R "$HOST_PAAS_UID":"$HOST_PAAS_UID" /opt/stacks
 | `STACKS_DIR`           | `/opt/stacks`           | Base directory for compose stacks    |
 | `BOLT_DB_FILE`         | `/opt/stacks/.paas.db`  | BoltDB file path                     |
 | `DASHBOARD_DATA_FILE`  | `data/dashboard.json`    | Legacy JSON dashboard source         |
+| `PAAS_NGINX_BINARY`    | `nginx`                 | Nginx binary used by the dashboard for ingress management |
+| `PAAS_NGINX_SITES_DIR` | `/etc/nginx/conf.d`      | Directory where route configs are written |
+| `PAAS_PROXY_UPSTREAM_HOST` | `host.docker.internal` | Host used to reach app ports from inside dashboard container |
+| `PAAS_CERTBOT_BINARY`  | `certbot`               | Certbot binary used for TLS operations |
 
 ## Routes
 

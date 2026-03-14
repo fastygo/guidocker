@@ -19,8 +19,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     gnupg \
+    iproute2 \
     git \
-    tzdata && \
+    tzdata \
+    nginx \
+    certbot \
+    python3-certbot-nginx \
+    netcat-openbsd && \
     rm -rf /var/lib/apt/lists/*
 
 RUN install -m 0755 -d /etc/apt/keyrings && \
@@ -38,11 +43,13 @@ RUN if getent group docker >/dev/null 2>&1; then \
     fi && \
     useradd --system --create-home --home-dir /home/paas --shell /usr/sbin/nologin --groups docker paas && \
     mkdir -p /opt/stacks /app/data && \
+    mkdir -p /etc/nginx/conf.d /etc/letsencrypt /var/lib/letsencrypt /var/log/letsencrypt /run /run/nginx && \
     chown -R paas:paas /opt/stacks /app /home/paas
 
 WORKDIR /app
 
 COPY --from=builder /out/dashboard /usr/local/bin/dashboard
+COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 COPY data ./data
 COPY --from=builder /src/static ./static
 
@@ -52,15 +59,21 @@ ENV SERVER_HOST=0.0.0.0 \
     PAAS_ADMIN_PASS=admin@123 \
     STACKS_DIR=/opt/stacks \
     BOLT_DB_FILE=/opt/stacks/.paas.db \
-    DASHBOARD_DATA_FILE=/app/data/dashboard.json
+    DASHBOARD_DATA_FILE=/app/data/dashboard.json \
+    PAAS_NGINX_BINARY=nginx \
+    PAAS_NGINX_SITES_DIR=/etc/nginx/conf.d \
+    PAAS_PROXY_UPSTREAM_HOST=host.docker.internal \
+    PAAS_CERTBOT_BINARY=certbot
 
 VOLUME ["/opt/stacks"]
 
 EXPOSE 3000
+EXPOSE 80
+EXPOSE 443
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=5s --retries=3 \
     CMD curl -sf http://localhost:3000/ || exit 1
 
-USER paas
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-ENTRYPOINT ["/usr/local/bin/dashboard"]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]

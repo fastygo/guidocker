@@ -1367,39 +1367,46 @@ func (s *Service) reconcileRouting(ctx context.Context, app *domain.App, previou
 		previousApp := *app
 		previousApp.PublicDomain = previous
 		if err := s.hostManager.RemoveRouting(ctx, &previousApp, settings); err != nil {
-			return err
+			return fmt.Errorf("remove previous routing: %w", err)
 		}
 		if err := s.certManager.RemoveCertificate(ctx, previous); err != nil {
-			return err
+			return fmt.Errorf("remove previous certificate: %w", err)
 		}
 	}
 	if previous == currentDomain && previous != "" && !app.UseTLS {
 		if err := s.certManager.RemoveCertificate(ctx, previous); err != nil {
-			return err
+			return fmt.Errorf("remove unused certificate: %w", err)
 		}
 	}
 
 	if currentDomain == "" {
 		return nil
 	}
-	if err := s.hostManager.ValidateRouting(ctx); err != nil {
-		return err
-	}
-	if err := s.hostManager.ApplyRouting(ctx, app, settings); err != nil {
+	if err := s.applyDomainRouting(ctx, app, settings); err != nil {
 		return err
 	}
 	if app.UseTLS {
 		if err := s.certManager.EnsureCertificate(ctx, settings, currentDomain); err != nil {
-			return err
+			return fmt.Errorf("ensure certificate: %w", err)
 		}
-		if err := s.hostManager.ApplyRouting(ctx, app, settings); err != nil {
+		if err := s.applyDomainRouting(ctx, app, settings); err != nil {
 			return err
 		}
 	}
 	if err := s.hostManager.ValidateRouting(ctx); err != nil {
-		return err
+		return fmt.Errorf("validate routing before reload: %w", err)
 	}
 	return s.hostManager.ReloadRouting(ctx)
+}
+
+func (s *Service) applyDomainRouting(ctx context.Context, app *domain.App, settings domain.PlatformSettings) error {
+	if err := s.hostManager.ApplyRouting(ctx, app, settings); err != nil {
+		return fmt.Errorf("apply routing: %w", err)
+	}
+	if err := s.hostManager.ValidateRouting(ctx); err != nil {
+		return fmt.Errorf("validate routing after apply: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) removeRoutingArtifacts(ctx context.Context, app *domain.App, previousDomain string, removeCertificate bool) error {
