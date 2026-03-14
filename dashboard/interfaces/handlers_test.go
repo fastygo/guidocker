@@ -570,6 +570,27 @@ func TestDashboardHandler_APIAppDelete_NotFound(t *testing.T) {
 	}
 }
 
+func TestDashboardHandler_APIAppDelete_ManualCleanupRequired(t *testing.T) {
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{
+		deleteFn: func(_ context.Context, id string) error {
+			if id != "app-1" {
+				t.Fatalf("expected deleted app app-1, got %q", id)
+			}
+			return domain.ErrManualCleanupRequired
+		},
+	})
+
+	request := httptest.NewRequest(http.MethodDelete, "/api/apps/app-1", nil)
+	recorder := httptest.NewRecorder()
+
+	handler.APIAppRoutes(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, recorder.Result().StatusCode)
+	}
+}
+
 func TestDashboardHandler_APIImport_Create(t *testing.T) {
 	handler := newTestHandler(&fakeDashboardUseCase{})
 	handler.SetAppUseCase(&fakeAppUseCase{

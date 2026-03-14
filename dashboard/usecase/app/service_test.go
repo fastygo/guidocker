@@ -531,6 +531,195 @@ func TestService_DeleteApp_AggregatesCleanupErrorsButCleansManagedArtifacts(t *t
 	}
 }
 
+func TestService_DeleteApp_BlockingExternalContainerRequiresManualCleanup(t *testing.T) {
+	repo := newFakeAppRepository()
+	baseDir := t.TempDir()
+	stackDir := filepath.Join(baseDir, "app-1")
+	if err := os.MkdirAll(stackDir, 0o755); err != nil {
+		t.Fatalf("failed to create stack dir: %v", err)
+	}
+
+	repo.items["app-1"] = &domain.App{
+		ID:          "app-1",
+		Name:        "Demo",
+		ComposeYAML: "services:\n  web:\n    image: nginx:alpine",
+		Dir:         stackDir,
+		PublicDomain: "demo.example.com",
+		Status:      domain.AppStatusRunning,
+		CreatedAt:   time.Now().UTC(),
+		UpdatedAt:   time.Now().UTC(),
+	}
+
+	destroyed := false
+	hostCalled := false
+	certRemoved := false
+
+	service := NewAppService(repo, &fakeDockerRepository{
+		listAllFn: func(_ context.Context) ([]domain.Container, error) {
+			return []domain.Container{
+				{
+					ID:   "container-1",
+					Name: "legacy-app-1-worker",
+				},
+			}, nil
+		},
+		inspectFn: func(_ context.Context, _ []string) ([]domain.ContainerDetail, error) {
+			return []domain.ContainerDetail{
+				{
+					ID:     "container-1",
+					Name:   "/legacy-app-1-worker",
+					Labels: map[string]string{},
+				},
+			}, nil
+		},
+		destroyFn: func(_ context.Context, app *domain.App) error {
+			destroyed = true
+			return nil
+		},
+	}, nil, baseDir)
+	service.WithHostManagers(&fakeHostManager{
+		removeRoutingFn: func(_ context.Context, _ *domain.App, _ domain.PlatformSettings) error {
+			hostCalled = true
+			return nil
+		},
+	}, &fakeCertManager{
+		removeCertificateFn: func(_ context.Context, _ string) error {
+			certRemoved = true
+			return nil
+		},
+	})
+
+	err := service.DeleteApp(context.Background(), "app-1")
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if !errors.Is(err, domain.ErrManualCleanupRequired) {
+		t.Fatalf("expected ErrManualCleanupRequired, got %v", err)
+	}
+	if destroyed {
+		t.Fatalf("expected runtime destroy to be skipped")
+	}
+	if hostCalled {
+		t.Fatalf("expected routing cleanup to be skipped on blocked delete preflight")
+	}
+	if certRemoved {
+		t.Fatalf("expected certificate removal to be skipped on blocked delete preflight")
+	}
+	if _, ok := repo.items["app-1"]; !ok {
+		t.Fatalf("expected app still present in repository")
+	}
+}
+
+func TestService_DeleteApp_DomainOwnedByAdminSkipsCertificateRemoval(t *testing.T) {
+	repo := newFakeAppRepository()
+	baseDir := t.TempDir()
+	stackDir := filepath.Join(baseDir, "app-1")
+	if err := os.MkdirAll(stackDir, 0o755); err != nil {
+		t.Fatalf("failed to create stack dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stackDir, "docker-compose.yml"), []byte(`services:`), 0o644); err != nil {
+		t.Fatalf("failed to create compose file: %v", err)
+	}
+
+	repo.items["app-1"] = &domain.App{
+		ID:          "app-1",
+		Name:        "Dashboard",
+		ComposeYAML: "services:\n  web:\n    image: nginx:alpine",
+		Dir:         stackDir,
+		PublicDomain: "admin.example.com",
+		UseTLS:      true,
+		Status:      domain.AppStatusRunning,
+		CreatedAt:   time.Now().UTC(),
+		UpdatedAt:   time.Now().UTC(),
+	}
+
+	routingCalls := 0
+	certRemoved := false
+
+	service := NewAppService(repo, &fakeDockerRepository{}, nil, baseDir).
+		WithPlatformSettingsUseCase(&fakePlatformSettingsUseCase{
+			settings: &domain.PlatformSettings{
+				AdminDomain: "admin.example.com",
+			},
+		}).
+		WithHostManagers(&fakeHostManager{
+		removeRoutingFn: func(_ context.Context, app *domain.App, _ domain.PlatformSettings) error {
+			routingCalls++
+			if app == nil || app.PublicDomain != "admin.example.com" {
+				t.Fatalf("unexpected app for routing cleanup: %#v", app)
+			}
+			return nil
+		},
+	}, &fakeCertManager{
+		removeCertificateFn: func(_ context.Context, _ string) error {
+			certRemoved = true
+			return nil
+		},
+	})
+
+	if err := service.DeleteApp(context.Background(), "app-1"); err != nil {
+		t.Fatalf("DeleteApp() error = %v", err)
+	}
+
+	if routingCalls != 1 {
+		t.Fatalf("expected one routing cleanup call, got %d", routingCalls)
+	}
+	if certRemoved {
+		t.Fatalf("expected certificate removal to be skipped for admin domain")
+	}
+	if _, ok := repo.items["app-1"]; ok {
+		t.Fatalf("expected app removed from repository")
+	}
+	if _, err := os.Stat(stackDir); !os.IsNotExist(err) {
+		t.Fatalf("expected stack dir removed, stat error: %v", err)
+	}
+}
+
+func TestService_DeleteApp_ExternalComposeResourcesRequireManualCleanup(t *testing.T) {
+	repo := newFakeAppRepository()
+	baseDir := t.TempDir()
+	stackDir := filepath.Join(baseDir, "app-1")
+	if err := os.MkdirAll(stackDir, 0o755); err != nil {
+		t.Fatalf("failed to create stack dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stackDir, "docker-compose.yml"), []byte(`services:
+  web:
+    image: postgres:15
+    volumes:
+      - external-volume:/var/lib/postgresql/data
+      - type: volume
+        source: old-shared
+        target: /data
+        external: true`), 0o644); err != nil {
+		t.Fatalf("failed to create compose file: %v", err)
+	}
+
+	repo.items["app-1"] = &domain.App{
+		ID:          "app-1",
+		Name:        "Stateful",
+		ComposeYAML: `services:
+  web:
+    image: postgres:15
+    volumes:
+      - external-volume:/var/lib/postgresql/data
+      - type: volume
+        source: old-shared
+        target: /data
+        external: true`,
+		Dir:         stackDir,
+		Status:      domain.AppStatusCreated,
+		CreatedAt:   time.Now().UTC(),
+		UpdatedAt:   time.Now().UTC(),
+	}
+
+	service := NewAppService(repo, &fakeDockerRepository{}, nil, baseDir)
+	if err := service.DeleteApp(context.Background(), "app-1"); err == nil {
+		t.Fatalf("expected error")
+	} else if !errors.Is(err, domain.ErrManualCleanupRequired) {
+		t.Fatalf("expected ErrManualCleanupRequired, got %v", err)
+	}
+}
+
 func TestService_CreateApp(t *testing.T) {
 	repo := newFakeAppRepository()
 	baseDir := t.TempDir()

@@ -471,10 +471,11 @@ func (h *DashboardHandler) writeAppError(w http.ResponseWriter, err error) {
 		errors.Is(err, domain.ErrMissingComposeFile),
 		errors.Is(err, domain.ErrMissingDockerfile),
 		errors.Is(err, domain.ErrInvalidAppPort),
-	errors.Is(err, domain.ErrInvalidDomain),
-	errors.Is(err, domain.ErrInvalidProxyPort),
-	errors.Is(err, domain.ErrAdminPortConflict),
-	errors.Is(err, domain.ErrDomainConflict),
+		errors.Is(err, domain.ErrInvalidDomain),
+		errors.Is(err, domain.ErrInvalidProxyPort),
+		errors.Is(err, domain.ErrAdminPortConflict),
+		errors.Is(err, domain.ErrDomainConflict),
+		errors.Is(err, domain.ErrManualCleanupRequired),
 		errors.Is(err, domain.ErrComposeConfigValidation):
 		h.writeErrorResponse(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, domain.ErrMissingGitRepository):

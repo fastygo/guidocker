@@ -259,12 +259,20 @@ func (s *Service) DeleteApp(ctx context.Context, id string) error {
 	}
 
 	previousDomain := app.PublicDomain
+	preflight, err := s.buildDeletePreflight(ctx, app)
+	if err != nil {
+		return err
+	}
+	if preflight.blockDelete {
+		return preflight.manualError()
+	}
+
 	var cleanupErrors []error
 
-	if s.dockerRepository != nil {
+	if s.dockerRepository != nil && preflight.destroyRuntime {
 		cleanupErrors = appendCleanupError(cleanupErrors, "destroy runtime", s.dockerRepository.Destroy(ctx, app))
 	}
-	if err := s.removeRoutingArtifacts(ctx, app, previousDomain); err != nil {
+	if err := s.removeRoutingArtifacts(ctx, app, previousDomain, preflight.removeCertificate); err != nil {
 		cleanupErrors = appendCleanupError(cleanupErrors, "remove routing/certs", err)
 	}
 	if err := s.removeManagedEnv(app); err != nil {
@@ -286,6 +294,196 @@ func (s *Service) DeleteApp(ctx context.Context, id string) error {
 	}
 
 	return s.repository.Delete(ctx, id)
+}
+
+type deletePreflight struct {
+	destroyRuntime    bool
+	removeCertificate bool
+	blockDelete       bool
+	warnings          []string
+}
+
+func (p deletePreflight) manualError() error {
+	if len(p.warnings) == 0 {
+		return fmt.Errorf("%w", domain.ErrManualCleanupRequired)
+	}
+	return fmt.Errorf("%w: %s", domain.ErrManualCleanupRequired, strings.Join(p.warnings, "; "))
+}
+
+func (s *Service) buildDeletePreflight(ctx context.Context, app *domain.App) (deletePreflight, error) {
+	result := deletePreflight{
+		destroyRuntime:    true,
+		removeCertificate: true,
+		blockDelete:       false,
+	}
+	if app == nil {
+		result.blockDelete = true
+		result.warnings = append(result.warnings, "app not found")
+		return result, nil
+	}
+
+	domainValue := normalizeDomain(app.PublicDomain)
+	removeCert, certWarnings, err := s.canRemoveAppCertificate(ctx, app.ID, domainValue)
+	if err != nil {
+		return deletePreflight{}, fmt.Errorf("evaluate app certificate cleanup: %w", err)
+	}
+	if !removeCert {
+		result.removeCertificate = false
+		result.warnings = append(result.warnings, certWarnings...)
+	}
+
+	_, runtimeWarnings, err := s.detectUnsafeDeleteRuntime(ctx, app)
+	if err != nil {
+		return deletePreflight{}, fmt.Errorf("evaluate app runtime cleanup: %w", err)
+	}
+	if len(runtimeWarnings) > 0 {
+		result.blockDelete = true
+		result.destroyRuntime = false
+		result.warnings = append(result.warnings, runtimeWarnings...)
+	}
+
+	sharedVolumeWarnings := s.warnSharedVolumeBindings(app.ComposeYAML)
+	if len(sharedVolumeWarnings) > 0 {
+		result.blockDelete = true
+		result.destroyRuntime = false
+		result.warnings = append(result.warnings, sharedVolumeWarnings...)
+	}
+
+	return result, nil
+}
+
+func (s *Service) canRemoveAppCertificate(ctx context.Context, appID, domainValue string) (bool, []string, error) {
+	domainValue = normalizeDomain(domainValue)
+	if domainValue == "" {
+		return true, nil, nil
+	}
+
+	settings, _, err := s.loadPlatformSettings(ctx)
+	if err != nil {
+		return false, nil, err
+	}
+	if normalizeDomain(settings.AdminDomain) == domainValue {
+		return false, []string{"certificate removal skipped for admin domain"}, nil
+	}
+
+	apps, err := s.repository.List(ctx)
+	if err != nil {
+		return false, nil, err
+	}
+	for _, item := range apps {
+		if item == nil || item.ID == appID {
+			continue
+		}
+		if normalizeDomain(item.PublicDomain) == domainValue {
+			return false, []string{"certificate appears to be shared with another managed app"}, nil
+		}
+	}
+
+	return true, nil, nil
+}
+
+func (s *Service) detectUnsafeDeleteRuntime(ctx context.Context, app *domain.App) ([]domain.Container, []string, error) {
+	if s.dockerRepository == nil {
+		return nil, nil, nil
+	}
+	if app == nil {
+		return nil, []string{"app is missing"}, nil
+	}
+
+	allContainers, err := s.dockerRepository.ListAllContainers(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("list containers: %w", err)
+	}
+	if len(allContainers) == 0 {
+		return nil, nil, nil
+	}
+
+	ids := make([]string, 0, len(allContainers))
+	for _, item := range allContainers {
+		ids = append(ids, item.ID)
+	}
+	inspected, err := s.dockerRepository.InspectContainers(ctx, ids)
+	if err != nil {
+		return nil, nil, fmt.Errorf("inspect containers: %w", err)
+	}
+
+	appID := normalizeDomain(app.ID)
+	appDir := filepath.Clean(strings.TrimSpace(app.Dir))
+	if appDir == "" {
+		appDir = filepath.Join(s.stacksDir, appID)
+	}
+
+	var unsafeContainers []domain.Container
+	var warnings []string
+	for _, detail := range inspected {
+		if isManagedAppContainerCandidate(detail, appID, appDir) && !isManagedAppContainer(detail, appID, appDir) {
+			unsafeContainers = append(unsafeContainers, domain.Container{
+				ID:     detail.ID,
+				Name:   detail.Name,
+				Status: detail.Status,
+				Ports:  append([]string{}, detail.Ports...),
+			})
+		}
+	}
+
+	if len(unsafeContainers) > 0 {
+		warnings = append(warnings, "unmanaged runtime containers are associated with app ownership pattern")
+	}
+	if len(warnings) > 0 {
+		return unsafeContainers, warnings, nil
+	}
+	return nil, nil, nil
+}
+
+func isManagedAppContainer(detail domain.ContainerDetail, appID, appDir string) bool {
+	project := normalizeDomain(strings.TrimSpace(detail.Labels["com.docker.compose.project"]))
+	if project != "" && project == appID {
+		return true
+	}
+
+	name := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(detail.Name, "/")))
+	if name == appID || strings.HasPrefix(name, appID+"-") || strings.HasPrefix(name, appID+"_") || strings.Contains(name, "-"+appID+"-") {
+		return true
+	}
+
+	return hasMountForPath(detail.Mounts, appDir)
+}
+
+func isManagedAppContainerCandidate(detail domain.ContainerDetail, appID, appDir string) bool {
+	name := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(detail.Name, "/")))
+	hasAppName := strings.Contains(name, appID)
+	if hasAppName {
+		return true
+	}
+	if hasMountForPath(detail.Mounts, appDir) {
+		return true
+	}
+	project := strings.ToLower(strings.TrimSpace(detail.Labels["com.docker.compose.project"]))
+	return project == appID
+}
+
+func hasMountForPath(mounts []string, appDir string) bool {
+	if appDir == "" {
+		return false
+	}
+	lowerDir := strings.ToLower(filepath.Clean(appDir))
+	for _, mount := range mounts {
+		if strings.Contains(strings.ToLower(filepath.Clean(mount)), lowerDir) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Service) warnSharedVolumeBindings(raw string) []string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil
+	}
+	if strings.Contains(trimmed, "external: true") {
+		return []string{"compose file declares external resources"}
+	}
+	return nil
 }
 
 func appendCleanupError(errs []error, step string, err error) []error {
@@ -1173,7 +1371,7 @@ func (s *Service) reconcileRouting(ctx context.Context, app *domain.App, previou
 	return s.hostManager.ReloadRouting(ctx)
 }
 
-func (s *Service) removeRoutingArtifacts(ctx context.Context, app *domain.App, previousDomain string) error {
+func (s *Service) removeRoutingArtifacts(ctx context.Context, app *domain.App, previousDomain string, removeCertificate bool) error {
 	if app == nil {
 		return nil
 	}
@@ -1196,6 +1394,12 @@ func (s *Service) removeRoutingArtifacts(ctx context.Context, app *domain.App, p
 	var cleanupErrors []error
 	if err := s.hostManager.RemoveRouting(ctx, &cloned, settings); err != nil {
 		cleanupErrors = appendCleanupError(cleanupErrors, "remove routing", err)
+	}
+	if !removeCertificate {
+		if err := mergeCleanupErrors(cleanupErrors); err != nil {
+			return err
+		}
+		return s.hostManager.ReloadRouting(ctx)
 	}
 	if err := s.certManager.RemoveCertificate(ctx, domainValue); err != nil {
 		cleanupErrors = appendCleanupError(cleanupErrors, "remove certificate", err)
