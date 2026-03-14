@@ -6,7 +6,7 @@
   "scripts": {
     "dev:css": "tailwindcss -i ./static/css/input.css -o ./static/css/app.css --watch",
     "build:css": "tailwindcss -i ./static/css/input.css -o ./static/css/app.css",
-    "build:www": "tailwindcss -i ../.project/www/style.input.css -o ../.project/www/style.css",
+    "build:www": "tailwindcss -i ../website/style.input.css -o ../website/style.css",
     "dev:air": "air",
     "clean:go": "go clean -cache -modcache -testcache",
     "clean:npm": "npm cache clean --force && npm cache verify",

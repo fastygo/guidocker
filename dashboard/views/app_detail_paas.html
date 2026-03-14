@@ -131,7 +131,7 @@
 		const envNode = document.getElementById('app-managed-env');
 		const request = {
 			public_domain: domainNode ? domainNode.value.trim() : '',
-			proxy_target_port: portNode ? Number.parseInt(portNode.value, 10) || 0,
+			proxy_target_port: portNode ? (Number.parseInt(portNode.value, 10) || 0) : 0,
 			use_tls: tlsNode ? !!tlsNode.checked : false,
 			managed_env: parseManagedEnv(envNode ? envNode.value : ''),
 		};

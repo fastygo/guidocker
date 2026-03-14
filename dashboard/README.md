@@ -102,7 +102,7 @@ go install github.com/air-verse/air@latest
 | ----------- | ------------------------------------ |
 | `dev:css`   | Tailwind CSS watch mode              |
 | `build:css` | One-time CSS build                   |
-| `build:www` | Build landing page CSS (`.project/www`) |
+| `build:www` | Build landing page CSS (`website/`) |
 | `dev:air`   | Runs `dev:css` + `air` together      |
 
 **Two-terminal flow:**

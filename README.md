@@ -15,15 +15,17 @@ A lightweight PaaS for managing Docker applications. Deploy, monitor, and clean 
 │   ├── views/           # HTML templates
 │   └── static/          # Tailwind CSS, assets
 │
-└── .project/
-    └── www/             # Static landing page
-        ├── index.html   # Product intro, feature highlights
-        ├── style.input.css  # Tailwind source (shadcn tokens)
-        └── style.css    # Compiled CSS (build output)
+├── website/             # Public home page / landing site
+│   ├── docker-compose.yml  # Importable static site stack
+│   ├── index.html       # Product intro, feature highlights
+│   ├── style.input.css  # Tailwind source
+│   └── style.css        # Compiled CSS (build output)
+│
+└── .project/            # Project planning notes and internal docs
 ```
 
 - **dashboard/** — Go server with HTTP Basic Auth, BoltDB, and Docker Compose integration. Serves the full admin UI (Overview, Apps, Compose, Logs, Scanner, Settings) and REST API.
-- **.project/www/** — Static landing page (HTML + Tailwind) introducing the product. Uses shadcn-style design tokens. Built via `npm run build:www` from `dashboard/`.
+- **website/** — Static landing page (HTML + Tailwind) for the public product home page. Built via `npm run build:www` from `dashboard/` and importable into the admin panel via `website/docker-compose.yml`.
 
 ## Quick Start
 
@@ -44,7 +46,7 @@ npm install
 # Dashboard UI (Tailwind)
 npm run build:css
 
-# Landing page (.project/www)
+# Landing page (website/)
 npm run build:www
 ```
 

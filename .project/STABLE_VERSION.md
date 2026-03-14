@@ -4,6 +4,16 @@
 
 Ship a fully usable stable release for simple stacks before the `Project` / `Service` refactor. In this release, one managed `App` remains the main unit of management and the admin panel stays a separate deployment.
 
+## Immediate Priority
+
+- [ ] Add in-place refresh for imported repo apps so GitHub `docker-compose` updates can be pulled without recreating the app, while preserving domain, proxy port, TLS, and managed env settings
+  - Refresh must reuse the stored `RepoURL`, `RepoBranch`, and `ComposePath`
+  - Refresh must update the stored `ResolvedCommit` after a successful pull
+  - Refresh must replace the stored `ComposeYAML` only after the new repo state is validated
+  - Refresh must preserve `PublicDomain`, `ProxyTargetPort`, `UseTLS`, and managed env settings
+  - Refresh should allow an operator to choose update-only or update-and-redeploy
+  - Refresh failures must leave the currently deployed app configuration untouched
+
 ## Target Scenario
 
 - Single-user standalone admin panel with root privileges

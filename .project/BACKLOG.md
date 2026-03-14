@@ -34,6 +34,16 @@ These items were intentionally left out of the first stable cutoff and belong to
 - [ ] Extended scanner coverage for proxy and certificate leftovers
 - [ ] Final production-hardening validation pass before declaring the stable baseline fully closed
 
+## Immediate Priority
+
+- [ ] Add explicit `Host port` and `Container port` support for Dockerfile fallback import instead of forcing one numeric `App port` value to generate `%d:%d`
+  - Dockerfile fallback must collect `Host port` and `Container port` as separate values
+  - Generated Compose must map ports as `HOST:CONTAINER` instead of forcing identical values
+  - Validation must keep `80` and `443` reserved for platform ingress on the host side
+  - The UI must clearly explain that `Host port` is for direct server access and `Container port` is what the app listens on internally
+  - Existing imported apps must remain readable even if they were created with the legacy single-port model
+  - Operators should be able to use common mappings such as `777:80`, `8080:3000`, or `9000:8080`
+
 ## Architecture Improvement Plan
 
 These improvements are not blockers for the current stable baseline, but they should guide the next refactor so the platform stays flexible and scalable as it grows beyond the single-`App` model.
