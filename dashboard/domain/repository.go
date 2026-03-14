@@ -16,6 +16,7 @@ type AppRepository interface {
 }
 
 type DockerRepository interface {
+	EnsureNetwork(ctx context.Context) error
 	Deploy(ctx context.Context, app *App) error
 	Stop(ctx context.Context, app *App) error
 	Restart(ctx context.Context, app *App) error
@@ -25,6 +26,7 @@ type DockerRepository interface {
 	ListRunning(ctx context.Context) ([]Container, error)
 	ListAllContainers(ctx context.Context) ([]Container, error)
 	InspectContainers(ctx context.Context, ids []string) ([]ContainerDetail, error)
+	ResolveContainerIP(ctx context.Context, app *App) (string, error)
 }
 
 type GitRepository interface {

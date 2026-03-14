@@ -241,6 +241,9 @@ func (s *Service) UpdateAppConfig(ctx context.Context, id string, config domain.
 	if err := s.persistManagedEnv(ctx, app); err != nil {
 		return nil, err
 	}
+	if err := s.resolveProxyContainerIP(ctx, app); err != nil {
+		return nil, err
+	}
 	if err := s.reconcileRouting(ctx, app, previousDomain); err != nil {
 		return nil, err
 	}
@@ -561,10 +564,6 @@ func (s *Service) DeployApp(ctx context.Context, id string) error {
 	if err := s.persistManagedEnv(ctx, app); err != nil {
 		return err
 	}
-	if err := s.reconcileRouting(ctx, app, app.PublicDomain); err != nil {
-		return err
-	}
-
 	if err := s.dockerRepository.Deploy(ctx, app); err != nil {
 		app.Status = domain.AppStatusError
 		app.UpdatedAt = time.Now().UTC()
@@ -575,12 +574,21 @@ func (s *Service) DeployApp(ctx context.Context, id string) error {
 	status, err := s.dockerRepository.GetStatus(ctx, app)
 	if err != nil {
 		app.Status = domain.AppStatusRunning
+	} else {
+		app.Status = domain.NormalizeAppStatus(status)
+	}
+	if err := s.resolveProxyContainerIP(ctx, app); err != nil {
+		app.Status = domain.AppStatusError
 		app.UpdatedAt = time.Now().UTC()
 		_ = s.repository.Update(ctx, app)
-		return nil
+		return fmt.Errorf("resolve proxy container ip: %w", err)
 	}
-
-	app.Status = domain.NormalizeAppStatus(status)
+	if err := s.reconcileRouting(ctx, app, app.PublicDomain); err != nil {
+		app.Status = domain.AppStatusError
+		app.UpdatedAt = time.Now().UTC()
+		_ = s.repository.Update(ctx, app)
+		return err
+	}
 	app.UpdatedAt = time.Now().UTC()
 	return s.repository.Update(ctx, app)
 }
@@ -605,6 +613,13 @@ func (s *Service) StopApp(ctx context.Context, id string) error {
 		return err
 	}
 
+	app.ProxyContainerIP = ""
+	if err := s.reconcileRouting(ctx, app, app.PublicDomain); err != nil {
+		app.Status = domain.AppStatusError
+		app.UpdatedAt = time.Now().UTC()
+		_ = s.repository.Update(ctx, app)
+		return err
+	}
 	app.Status = domain.AppStatusStopped
 	app.UpdatedAt = time.Now().UTC()
 	return s.repository.Update(ctx, app)
@@ -635,6 +650,18 @@ func (s *Service) RestartApp(ctx context.Context, id string) error {
 		app.Status = domain.AppStatusRunning
 	} else {
 		app.Status = domain.NormalizeAppStatus(status)
+	}
+	if err := s.resolveProxyContainerIP(ctx, app); err != nil {
+		app.Status = domain.AppStatusError
+		app.UpdatedAt = time.Now().UTC()
+		_ = s.repository.Update(ctx, app)
+		return fmt.Errorf("resolve proxy container ip: %w", err)
+	}
+	if err := s.reconcileRouting(ctx, app, app.PublicDomain); err != nil {
+		app.Status = domain.AppStatusError
+		app.UpdatedAt = time.Now().UTC()
+		_ = s.repository.Update(ctx, app)
+		return err
 	}
 	app.UpdatedAt = time.Now().UTC()
 	return s.repository.Update(ctx, app)
@@ -814,11 +841,28 @@ func (s *Service) refreshAppStatus(ctx context.Context, app *domain.App) (*domai
 	}
 
 	normalized := domain.NormalizeAppStatus(status)
+	previousIP := strings.TrimSpace(app.ProxyContainerIP)
+	if normalized == domain.AppStatusRunning {
+		if err := s.resolveProxyContainerIP(ctx, app); err != nil {
+			return app, nil
+		}
+	} else {
+		app.ProxyContainerIP = ""
+	}
 	if app.Status != normalized {
 		app.Status = normalized
 		app.UpdatedAt = time.Now().UTC()
 		if s.repository != nil {
 			_ = s.repository.Update(ctx, app)
+		}
+	}
+	if previousIP != strings.TrimSpace(app.ProxyContainerIP) {
+		app.UpdatedAt = time.Now().UTC()
+		if s.repository != nil {
+			_ = s.repository.Update(ctx, app)
+		}
+		if strings.TrimSpace(app.PublicDomain) != "" {
+			_ = s.reconcileRouting(ctx, app, app.PublicDomain)
 		}
 	}
 
@@ -1097,10 +1141,10 @@ func generateComposeFromDockerfile(port int) string {
   web:
     build:
       context: .
-    ports:
-      - "%d:%d"
+    expose:
+      - "%d"
     restart: unless-stopped
-`, port, port)
+`, port)
 }
 
 func validateAppInput(name, composeYAML string) error {
@@ -1253,16 +1297,6 @@ func (s *Service) validateAppConfig(ctx context.Context, app *domain.App, config
 		return err
 	}
 
-	if domainValue != "" && config.ProxyTargetPort > 0 {
-		settings, _, err := s.loadPlatformSettings(ctx)
-		if err != nil {
-			return err
-		}
-		if settings.AdminPort > 0 && config.ProxyTargetPort == settings.AdminPort {
-			return domain.ErrAdminPortConflict
-		}
-	}
-
 	if domainValue == "" {
 		return nil
 	}
@@ -1382,6 +1416,15 @@ func (s *Service) reconcileRouting(ctx context.Context, app *domain.App, previou
 	if currentDomain == "" {
 		return nil
 	}
+	if strings.TrimSpace(app.ProxyContainerIP) == "" {
+		if err := s.hostManager.RemoveRouting(ctx, app, settings); err != nil {
+			return fmt.Errorf("remove routing for unresolved upstream: %w", err)
+		}
+		if err := s.hostManager.ValidateRouting(ctx); err != nil {
+			return fmt.Errorf("validate routing before reload: %w", err)
+		}
+		return s.hostManager.ReloadRouting(ctx)
+	}
 	if err := s.applyDomainRouting(ctx, app, settings); err != nil {
 		return err
 	}
@@ -1487,5 +1530,26 @@ func validateProxyTargetPort(port int) error {
 	if port <= 0 || port > maxAppPort {
 		return domain.ErrInvalidProxyPort
 	}
+	return nil
+}
+
+func (s *Service) resolveProxyContainerIP(ctx context.Context, app *domain.App) error {
+	if app == nil {
+		return domain.ErrAppNotFound
+	}
+	if s.dockerRepository == nil {
+		app.ProxyContainerIP = ""
+		return nil
+	}
+
+	ip, err := s.dockerRepository.ResolveContainerIP(ctx, app)
+	if err != nil {
+		if errors.Is(err, domain.ErrContainerNotFound) {
+			app.ProxyContainerIP = ""
+			return nil
+		}
+		return err
+	}
+	app.ProxyContainerIP = strings.TrimSpace(ip)
 	return nil
 }

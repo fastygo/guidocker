@@ -102,6 +102,9 @@ func main() {
 	}()
 
 	dockerRepository := dockerrepo.NewDockerRepository(cfg.Stacks.Dir)
+	if err := dockerRepository.EnsureNetwork(context.Background()); err != nil {
+		log.Fatalf("❌ Failed to ensure app network: %v", err)
+	}
 	gitRepository := gitrepo.NewGitRepository()
 	platformSettingsRepository, err := boltrepo.NewPlatformSettingsRepository(cfg.Stacks.DBFile)
 	if err != nil {

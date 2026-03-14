@@ -58,6 +58,7 @@ func (r *fakeAppRepository) List(_ context.Context) ([]*domain.App, error) {
 }
 
 type fakeDockerRepository struct {
+	ensureNetworkFn func(context.Context) error
 	deployFn    func(context.Context, *domain.App) error
 	stopFn      func(context.Context, *domain.App) error
 	restartFn   func(context.Context, *domain.App) error
@@ -66,6 +67,7 @@ type fakeDockerRepository struct {
 	destroyFn   func(context.Context, *domain.App) error
 	listAllFn   func(context.Context) ([]domain.Container, error)
 	inspectFn   func(context.Context, []string) ([]domain.ContainerDetail, error)
+	resolveContainerIPFn func(context.Context, *domain.App) (string, error)
 }
 
 type fakeGitRepository struct {
@@ -144,6 +146,13 @@ func (r *fakeDockerRepository) Deploy(ctx context.Context, app *domain.App) erro
 	return nil
 }
 
+func (r *fakeDockerRepository) EnsureNetwork(ctx context.Context) error {
+	if r.ensureNetworkFn != nil {
+		return r.ensureNetworkFn(ctx)
+	}
+	return nil
+}
+
 func (r *fakeDockerRepository) Stop(ctx context.Context, app *domain.App) error {
 	if r.stopFn != nil {
 		return r.stopFn(ctx, app)
@@ -196,6 +205,13 @@ func (r *fakeDockerRepository) InspectContainers(ctx context.Context, ids []stri
 		return r.inspectFn(ctx, ids)
 	}
 	return []domain.ContainerDetail{}, nil
+}
+
+func (r *fakeDockerRepository) ResolveContainerIP(ctx context.Context, app *domain.App) (string, error) {
+	if r.resolveContainerIPFn != nil {
+		return r.resolveContainerIPFn(ctx, app)
+	}
+	return "", domain.ErrContainerNotFound
 }
 
 func (r *fakeGitRepository) Clone(ctx context.Context, sourceURL, branch, destination string) (string, error) {
@@ -377,7 +393,7 @@ func TestService_DeleteApp_RemovesRoutingEnvAndCertBeforeRecordDeletion(t *testi
 	}
 }
 
-func TestService_UpdateAppConfig_ValidatesAdminPortConflict(t *testing.T) {
+func TestService_UpdateAppConfig_AllowsInternalProxyPortMatchingAdminPort(t *testing.T) {
 	repo := newFakeAppRepository()
 	baseDir := t.TempDir()
 	repo.items["app-1"] = &domain.App{
@@ -401,8 +417,8 @@ func TestService_UpdateAppConfig_ValidatesAdminPortConflict(t *testing.T) {
 		PublicDomain:    "demo.example.com",
 		ProxyTargetPort: 3000,
 	})
-	if !errors.Is(err, domain.ErrAdminPortConflict) {
-		t.Fatalf("expected ErrAdminPortConflict, got %v", err)
+	if err != nil {
+		t.Fatalf("expected internal proxy target port to be allowed, got %v", err)
 	}
 }
 
@@ -517,7 +533,14 @@ func TestService_UpdateAppConfig_TriggersCertManagerWhenHTTPSRequested(t *testin
 	}
 
 	certCalled := 0
-	service := NewAppService(repo, &fakeDockerRepository{}, nil, baseDir).
+	service := NewAppService(repo, &fakeDockerRepository{
+		resolveContainerIPFn: func(_ context.Context, app *domain.App) (string, error) {
+			if app == nil || app.ID != "app-1" {
+				return "", domain.ErrContainerNotFound
+			}
+			return "10.44.0.8", nil
+		},
+	}, nil, baseDir).
 		WithPlatformSettingsUseCase(&fakePlatformSettingsUseCase{
 			settings: &domain.PlatformSettings{
 				CertbotEnabled:       true,
@@ -1074,8 +1097,8 @@ func TestService_ImportRepo_DockerfileFallbackWithPort(t *testing.T) {
 	if app.ComposePath != "docker-compose.generated.yml" {
 		t.Fatalf("expected generated compose path, got %q", app.ComposePath)
 	}
-	if !strings.Contains(app.ComposeYAML, "\"8080:8080\"") {
-		t.Fatalf("expected generated compose with required port mapping, got %q", app.ComposeYAML)
+	if !strings.Contains(app.ComposeYAML, "expose:\n      - \"8080\"") {
+		t.Fatalf("expected generated compose with required exposed port, got %q", app.ComposeYAML)
 	}
 }
 
@@ -1218,6 +1241,7 @@ func TestService_DeployApp_Success(t *testing.T) {
 	}
 
 	deployed := false
+	appliedRouting := false
 	service := NewAppService(repo, &fakeDockerRepository{
 		deployFn: func(_ context.Context, app *domain.App) error {
 			deployed = app.ID == "app-1"
@@ -1226,7 +1250,21 @@ func TestService_DeployApp_Success(t *testing.T) {
 		getStatusFn: func(context.Context, *domain.App) (string, error) {
 			return domain.AppStatusRunning, nil
 		},
+		resolveContainerIPFn: func(_ context.Context, app *domain.App) (string, error) {
+			if app == nil || app.ID != "app-1" {
+				return "", domain.ErrContainerNotFound
+			}
+			return "10.55.0.9", nil
+		},
 	}, nil, stackBase)
+	service.WithHostManagers(&fakeHostManager{
+		applyRoutingFn: func(_ context.Context, app *domain.App, _ domain.PlatformSettings) error {
+			appliedRouting = app != nil && app.ProxyContainerIP == "10.55.0.9"
+			return nil
+		},
+	}, nil)
+	repo.items["app-1"].PublicDomain = "app.example.com"
+	repo.items["app-1"].ProxyTargetPort = 8080
 
 	if err := service.DeployApp(context.Background(), "app-1"); err != nil {
 		t.Fatalf("DeployApp() error = %v", err)
@@ -1237,6 +1275,12 @@ func TestService_DeployApp_Success(t *testing.T) {
 	}
 	if got := repo.items["app-1"].Status; got != domain.AppStatusRunning {
 		t.Fatalf("expected running status, got %q", got)
+	}
+	if got := repo.items["app-1"].ProxyContainerIP; got != "10.55.0.9" {
+		t.Fatalf("expected resolved proxy container IP, got %q", got)
+	}
+	if !appliedRouting {
+		t.Fatal("expected routing to be applied with resolved proxy container IP")
 	}
 }
 

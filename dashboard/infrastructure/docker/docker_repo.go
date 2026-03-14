@@ -9,26 +9,89 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
-	"sort"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Repository executes Docker Compose commands through the Docker CLI.
 type Repository struct {
-	stacksDir string
+	stacksDir   string
+	networkName string
 }
 
 const managedEnvFileName = ".platform.env"
+const composeOverrideFileName = "docker-compose.override.yml"
+const defaultAppNetworkName = "paas-network"
 
 // NewDockerRepository creates a docker-backed repository.
 func NewDockerRepository(stacksDir string) *Repository {
-	return &Repository{stacksDir: stacksDir}
+	networkName := strings.TrimSpace(os.Getenv("PAAS_APP_NETWORK"))
+	if networkName == "" {
+		networkName = defaultAppNetworkName
+	}
+	return &Repository{stacksDir: stacksDir, networkName: networkName}
+}
+
+func (r *Repository) EnsureNetwork(ctx context.Context) error {
+	networkName := strings.TrimSpace(r.networkName)
+	if networkName == "" {
+		return nil
+	}
+	if _, err := r.run(ctx, "docker", "network", "inspect", networkName); err == nil {
+		return nil
+	}
+	if _, err := r.run(ctx, "docker", "network", "create", networkName); err != nil && !strings.Contains(strings.ToLower(err.Error()), "already exists") {
+		return fmt.Errorf("ensure app network %s: %w", networkName, err)
+	}
+	return nil
+}
+
+func (r *Repository) ResolveContainerIP(ctx context.Context, app *domain.App) (string, error) {
+	if app == nil {
+		return "", domain.ErrAppNotFound
+	}
+
+	projectID := strings.TrimSpace(app.ID)
+	if projectID == "" {
+		return "", domain.ErrAppNotFound
+	}
+
+	output, err := r.run(ctx, "docker", "ps", "-q", "--filter", "label=com.docker.compose.project="+projectID)
+	if err != nil {
+		return "", fmt.Errorf("list project containers: %w", err)
+	}
+
+	lines := splitDockerPSOutput(output)
+	if len(lines) == 0 {
+		return "", domain.ErrContainerNotFound
+	}
+
+	ids := make([]string, 0, len(lines))
+	for _, line := range lines {
+		ids = append(ids, string(bytes.TrimSpace(line)))
+	}
+
+	items, err := r.inspectRaw(ctx, ids)
+	if err != nil {
+		return "", err
+	}
+
+	ip := pickProxyContainerIP(items, r.networkName, app.ProxyTargetPort)
+	if ip == "" {
+		return "", domain.ErrContainerNotFound
+	}
+	return ip, nil
 }
 
 func (r *Repository) Deploy(ctx context.Context, app *domain.App) error {
 	if app == nil {
 		return domain.ErrAppNotFound
+	}
+	if err := r.EnsureNetwork(ctx); err != nil {
+		return err
 	}
 
 	composeFile := r.composeFile(app)
@@ -40,6 +103,9 @@ func (r *Repository) Deploy(ctx context.Context, app *domain.App) error {
 	}
 	if err := os.WriteFile(composeFile, []byte(app.ComposeYAML), 0o644); err != nil {
 		return fmt.Errorf("write compose file: %w", err)
+	}
+	if err := r.ensureComposeOverride(app, composeFile); err != nil {
+		return fmt.Errorf("write compose override: %w", err)
 	}
 
 	args := r.composeCommandArgs(app, "up", "-d")
@@ -182,23 +248,9 @@ func (r *Repository) InspectContainers(ctx context.Context, ids []string) ([]dom
 		return []domain.ContainerDetail{}, nil
 	}
 
-	args := make([]string, 0, len(ids)+1)
-	args = append(args, "inspect")
-	args = append(args, ids...)
-
-	output, err := r.run(ctx, "docker", args...)
+	items, err := r.inspectRaw(ctx, ids)
 	if err != nil {
-		return nil, fmt.Errorf("inspect containers: %w", err)
-	}
-
-	output = bytes.TrimSpace(output)
-	if len(output) == 0 {
-		return []domain.ContainerDetail{}, nil
-	}
-
-	var items []dockerInspect
-	if err := json.Unmarshal(output, &items); err != nil {
-		return nil, fmt.Errorf("decode docker inspect: %w", err)
+		return nil, err
 	}
 
 	details := make([]domain.ContainerDetail, 0, len(items))
@@ -227,6 +279,28 @@ func (r *Repository) InspectContainers(ctx context.Context, ids []string) ([]dom
 	return details, nil
 }
 
+func (r *Repository) inspectRaw(ctx context.Context, ids []string) ([]dockerInspect, error) {
+	args := make([]string, 0, len(ids)+1)
+	args = append(args, "inspect")
+	args = append(args, ids...)
+
+	output, err := r.run(ctx, "docker", args...)
+	if err != nil {
+		return nil, fmt.Errorf("inspect containers: %w", err)
+	}
+
+	output = bytes.TrimSpace(output)
+	if len(output) == 0 {
+		return []dockerInspect{}, nil
+	}
+
+	var items []dockerInspect
+	if err := json.Unmarshal(output, &items); err != nil {
+		return nil, fmt.Errorf("decode docker inspect: %w", err)
+	}
+	return items, nil
+}
+
 func (r *Repository) composeFile(app *domain.App) string {
 	if app == nil {
 		return filepath.Join(r.stacksDir, "unknown", "docker-compose.yml")
@@ -242,6 +316,10 @@ func (r *Repository) composeFile(app *domain.App) string {
 	}
 
 	return filepath.Join(appDir, "docker-compose.yml")
+}
+
+func (r *Repository) composeOverrideFile(app *domain.App) string {
+	return filepath.Join(filepath.Dir(r.composeFile(app)), composeOverrideFileName)
 }
 
 func (r *Repository) ensureComposeSource(app *domain.App, composeFile string) error {
@@ -269,6 +347,25 @@ func (r *Repository) ensureComposeSource(app *domain.App, composeFile string) er
 	return nil
 }
 
+func (r *Repository) ensureComposeOverride(app *domain.App, composeFile string) error {
+	if app == nil {
+		return domain.ErrAppNotFound
+	}
+
+	serviceNames, err := serviceNamesFromCompose(app.ComposeYAML)
+	if err != nil {
+		return err
+	}
+	overrideFile := filepath.Join(filepath.Dir(composeFile), composeOverrideFileName)
+	if err := os.MkdirAll(filepath.Dir(overrideFile), 0o755); err != nil {
+		return fmt.Errorf("create override directory: %w", err)
+	}
+	if err := os.WriteFile(overrideFile, []byte(renderComposeOverride(serviceNames, r.networkName)), 0o644); err != nil {
+		return fmt.Errorf("write override file: %w", err)
+	}
+	return nil
+}
+
 func (r *Repository) composeEnvFile(app *domain.App) string {
 	appDir := strings.TrimSpace(app.Dir)
 	if appDir == "" {
@@ -283,6 +380,10 @@ func (r *Repository) composeCommandArgs(app *domain.App, command string, extra .
 	composeFile := r.composeFile(app)
 	if composeFile != "" {
 		args = append(args, "-f", composeFile)
+	}
+	overrideFile := r.composeOverrideFile(app)
+	if _, err := os.Stat(overrideFile); err == nil {
+		args = append(args, "-f", overrideFile)
 	}
 	envFile := r.composeEnvFile(app)
 	if _, err := os.Stat(envFile); err == nil {
@@ -495,9 +596,10 @@ type dockerInspect struct {
 }
 
 type dockerInspectConfig struct {
-	Image  string            `json:"Image"`
-	Labels map[string]string `json:"Labels"`
-	Env    []string          `json:"Env"`
+	Image        string            `json:"Image"`
+	Labels       map[string]string `json:"Labels"`
+	Env          []string          `json:"Env"`
+	ExposedPorts map[string]any    `json:"ExposedPorts"`
 }
 
 type dockerInspectState struct {
@@ -510,12 +612,114 @@ type dockerInspectMount struct {
 }
 
 type dockerInspectNetwork struct {
-	Ports map[string][]dockerInspectPortBinding `json:"Ports"`
+	Ports    map[string][]dockerInspectPortBinding `json:"Ports"`
+	Networks map[string]dockerInspectEndpoint      `json:"Networks"`
+}
+
+type dockerInspectEndpoint struct {
+	IPAddress string `json:"IPAddress"`
 }
 
 type dockerInspectPortBinding struct {
 	HostIP   string `json:"HostIP"`
 	HostPort string `json:"HostPort"`
+}
+
+func serviceNamesFromCompose(raw string) ([]string, error) {
+	var payload struct {
+		Services map[string]any `yaml:"services"`
+	}
+	if err := yaml.Unmarshal([]byte(raw), &payload); err != nil {
+		return nil, fmt.Errorf("%w: parse compose services: %v", domain.ErrInvalidComposeYAML, err)
+	}
+	if len(payload.Services) == 0 {
+		return nil, domain.ErrComposeNoServices
+	}
+	names := make([]string, 0, len(payload.Services))
+	for name := range payload.Services {
+		trimmed := strings.TrimSpace(name)
+		if trimmed == "" {
+			continue
+		}
+		names = append(names, trimmed)
+	}
+	sort.Strings(names)
+	if len(names) == 0 {
+		return nil, domain.ErrComposeNoServices
+	}
+	return names, nil
+}
+
+func renderComposeOverride(serviceNames []string, networkName string) string {
+	var builder strings.Builder
+	builder.WriteString("networks:\n")
+	builder.WriteString("  " + networkName + ":\n")
+	builder.WriteString("    external: true\n")
+	builder.WriteString("services:\n")
+	for _, serviceName := range serviceNames {
+		builder.WriteString("  " + serviceName + ":\n")
+		builder.WriteString("    networks:\n")
+		builder.WriteString("      - default\n")
+		builder.WriteString("      - " + networkName + "\n")
+	}
+	return builder.String()
+}
+
+func pickProxyContainerIP(items []dockerInspect, networkName string, targetPort int) string {
+	if len(items) == 0 {
+		return ""
+	}
+
+	sort.SliceStable(items, func(i, j int) bool {
+		left := strings.TrimSpace(items[i].Config.Labels["com.docker.compose.service"])
+		right := strings.TrimSpace(items[j].Config.Labels["com.docker.compose.service"])
+		if left == right {
+			return strings.TrimSpace(items[i].Name) < strings.TrimSpace(items[j].Name)
+		}
+		return left < right
+	})
+
+	fallback := ""
+	for _, item := range items {
+		if strings.TrimSpace(item.State.Status) != "running" {
+			continue
+		}
+		endpoint, ok := item.NetworkSettings.Networks[networkName]
+		if !ok {
+			continue
+		}
+		ip := strings.TrimSpace(endpoint.IPAddress)
+		if ip == "" {
+			continue
+		}
+		if fallback == "" {
+			fallback = ip
+		}
+		if containerMatchesTargetPort(item, targetPort) {
+			return ip
+		}
+	}
+
+	return fallback
+}
+
+func containerMatchesTargetPort(item dockerInspect, targetPort int) bool {
+	if targetPort <= 0 {
+		return true
+	}
+	portKeys := []string{
+		fmt.Sprintf("%d/tcp", targetPort),
+		fmt.Sprintf("%d/udp", targetPort),
+	}
+	for _, key := range portKeys {
+		if _, ok := item.NetworkSettings.Ports[key]; ok {
+			return true
+		}
+		if _, ok := item.Config.ExposedPorts[key]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 var _ domain.DockerRepository = (*Repository)(nil)

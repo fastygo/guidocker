@@ -48,7 +48,7 @@ dashboard/
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y docker.io docker-compose-plugin nginx
+sudo apt-get install -y docker.io docker-compose-plugin nginx certbot python3-certbot-nginx
 
 # If docker compose plugin is unavailable in the repo:
 sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" \
@@ -58,6 +58,9 @@ sudo chmod +x /usr/local/bin/docker-compose
 sudo usermod -aG docker "$USER"
 sudo mkdir -p /opt/stacks
 sudo chown -R "$USER:$USER" /opt/stacks
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t
+sudo systemctl restart nginx
 ```
 
 After changing the `docker` group, re-login or run:
@@ -150,40 +153,73 @@ make docker-run IMAGE_NAME=paas-dashboard IMAGE_TAG=latest \
 ### Docker Runtime Requirements
 
 - Mount host Docker socket: `-v /var/run/docker.sock:/var/run/docker.sock`
-- Add `--group-add <host-docker-GID>` so the container user can access the socket
+- Share the host PID namespace: `--pid host`
+- Run the dashboard on the managed Docker network: `--network paas-network`
+- Mount the host root into the container: `-v /:/host`
 - Mount stacks to `/opt/stacks` (writable by the container user)
-- Publish ingress ports: `-p 80:80` and `-p 443:443`
-- Add host routing entry: `--add-host=host.docker.internal:host-gateway`
-- Keep certificate paths persistent: `/opt/stacks/letsencrypt`
+- Mount host nginx and certbot state:
+  `/etc/nginx`, `/etc/letsencrypt`, `/var/lib/letsencrypt`, `/var/log/letsencrypt`
+- Keep host ports `80` and `443` free for host-installed `nginx`
+- Create `paas-network` before starting the dashboard container
 - Use `make docker-run-auto` on Linux for automatic host docker GID detection
 
 **Example:**
 
 ```bash
+docker network inspect paas-network >/dev/null 2>&1 || docker network create paas-network
+
 docker run -d \
-  --name paas-dashboard \
+  --name dashboard \
   --restart unless-stopped \
-  --group-add 999 \
-  -p 80:80 \
-  -p 443:443 \
+  --group-add "$(getent group docker | cut -d: -f3)" \
+  --pid host \
+  --network paas-network \
   -p 3000:3000 \
   -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /:/host \
   -v /opt/stacks:/opt/stacks \
-  -v /opt/stacks/letsencrypt/etc:/etc/letsencrypt \
-  -v /opt/stacks/letsencrypt/lib:/var/lib/letsencrypt \
-  -v /opt/stacks/letsencrypt/log:/var/log/letsencrypt \
-  --add-host=host.docker.internal:host-gateway \
+  -v /etc/nginx:/etc/nginx \
+  -v /etc/letsencrypt:/etc/letsencrypt \
+  -v /var/lib/letsencrypt:/var/lib/letsencrypt \
+  -v /var/log/letsencrypt:/var/log/letsencrypt \
+  --env SERVER_HOST=0.0.0.0 \
+  --env PAAS_PORT=3000 \
   --env PAAS_ADMIN_USER=admin \
   --env PAAS_ADMIN_PASS=admin@123 \
   --env STACKS_DIR=/opt/stacks \
-  --env PAAS_PROXY_UPSTREAM_HOST=host.docker.internal \
+  --env BOLT_DB_FILE=/opt/stacks/.paas.db \
+  --env PAAS_APP_NETWORK=paas-network \
+  --env PAAS_HOST_ROOT=/host \
+  --env PAAS_NGINX_BINARY=/usr/sbin/nginx \
+  --env PAAS_NGINX_SITES_DIR=/etc/nginx/conf.d \
+  --env PAAS_CERTBOT_BINARY=/usr/bin/certbot \
   paas-dashboard:latest
 ```
 
-**Optional ownership alignment for custom users:**
+**Post-start checklist:**
 
-The container currently runs as root, so `/opt/stacks` just needs to be writable by root inside the container.
-If you switch to a custom runtime user, ensure the host mount points are writable by that user.
+```bash
+docker network inspect paas-network >/dev/null
+docker inspect dashboard --format '{{json .HostConfig.NetworkMode}}'
+docker inspect dashboard --format '{{json .HostConfig.PidMode}}'
+docker exec dashboard chroot /host /usr/sbin/nginx -t
+docker exec dashboard chroot /host /usr/bin/certbot --version
+docker logs --tail 80 dashboard
+```
+
+Expected result:
+
+- `paas-network` exists
+- dashboard runs on `paas-network`
+- dashboard shares the host PID namespace
+- host `nginx -t` succeeds through the controller container
+- host `certbot` is reachable through the controller container
+- dashboard logs show normal startup without ingress validation failures
+
+**Operator note:**
+
+Applications should prefer internal networking (`expose`) instead of published host ports.
+`ProxyTargetPort` now means the internal container port used by host `nginx` for routing.
 
 ## Configuration
 
@@ -198,10 +234,11 @@ If you switch to a custom runtime user, ensure the host mount points are writabl
 | `STACKS_DIR`           | `/opt/stacks`           | Base directory for compose stacks    |
 | `BOLT_DB_FILE`         | `/opt/stacks/.paas.db`  | BoltDB file path                     |
 | `DASHBOARD_DATA_FILE`  | `data/dashboard.json`    | Legacy JSON dashboard source         |
-| `PAAS_NGINX_BINARY`    | `nginx`                 | Nginx binary used by the dashboard for ingress management |
-| `PAAS_NGINX_SITES_DIR` | `/etc/nginx/conf.d`      | Directory where route configs are written |
-| `PAAS_PROXY_UPSTREAM_HOST` | `host.docker.internal` | Host used to reach app ports from inside dashboard container |
-| `PAAS_CERTBOT_BINARY`  | `certbot`               | Certbot binary used for TLS operations |
+| `PAAS_APP_NETWORK`     | `paas-network`          | Managed Docker network for routed applications             |
+| `PAAS_HOST_ROOT`       | `/host`                 | Mounted host root used to run host nginx/certbot commands |
+| `PAAS_NGINX_BINARY`    | `/usr/sbin/nginx`       | Host nginx binary path used through `chroot`              |
+| `PAAS_NGINX_SITES_DIR` | `/etc/nginx/conf.d`     | Host nginx directory where route configs are written      |
+| `PAAS_CERTBOT_BINARY`  | `/usr/bin/certbot`      | Host certbot binary path used through `chroot`            |
 
 ## Routes
 
@@ -245,7 +282,7 @@ curl -u admin:admin@123 \
   -H "Content-Type: application/json" \
   -d '{
     "name": "demo-nginx",
-    "compose_yaml": "version: \"3.9\"\nservices:\n  web:\n    image: nginx:alpine\n    ports:\n      - \"8080:80\""
+    "compose_yaml": "version: \"3.9\"\nservices:\n  web:\n    image: nginx:alpine\n    expose:\n      - \"80\""
   }'
 
 curl -u admin:admin@123 \
@@ -289,26 +326,16 @@ sudo systemctl start paas
 sudo systemctl status paas
 ```
 
-### nginx reverse proxy
+### Host nginx and certbot
 
-```nginx
-# /etc/nginx/sites-enabled/paas
-server {
-    listen 80;
-    server_name _;
+The dashboard no longer ships its own ingress runtime.
+Install `nginx` and `certbot` on the host and let the dashboard manage:
 
-    location / {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
+- per-app route files in `/etc/nginx/conf.d`
+- certificate issuance and removal through host `certbot`
+- app-to-app isolation through the external Docker network `paas-network`
 
-Apply:
+After changing host nginx configuration outside the dashboard, always verify:
 
 ```bash
 sudo nginx -t
@@ -328,9 +355,9 @@ Covered areas:
 - Bolt repository CRUD
 - Handlers: login, create app, deploy
 
-## MVP Limitations
+## Current Limitations
 
-- No automatic nginx config generation per app
-- No wildcard SSL / Let's Encrypt
+- One routed upstream per app
+- Routing uses resolved container IPs; if an app gets a new IP while the dashboard is absent, reinstall or restart the dashboard to refresh the route
 - No multi-user / RBAC
-- No background sync of container state with stored apps
+- No wildcard SSL / Let's Encrypt

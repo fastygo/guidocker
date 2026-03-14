@@ -35,6 +35,7 @@ type App struct {
 
 	PublicDomain    string           `json:"public_domain"`
 	ProxyTargetPort int              `json:"proxy_target_port"`
+	ProxyContainerIP string          `json:"proxy_container_ip"`
 	ManagedEnv      map[string]string `json:"managed_env"`
 	UseTLS          bool             `json:"use_tls"`
 

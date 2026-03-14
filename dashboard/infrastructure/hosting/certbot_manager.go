@@ -8,25 +8,35 @@ import (
 	"strings"
 )
 
-const defaultCertbotBinary = "certbot"
+const defaultCertbotBinary = "/usr/bin/certbot"
 
 type CertbotManager struct {
 	binary    string
+	hostRoot  string
 	runScript func(context.Context, string, ...string) ([]byte, error)
 }
 
 func NewCertbotManager() *CertbotManager {
 	binary := strings.TrimSpace(os.Getenv("PAAS_CERTBOT_BINARY"))
-	return NewCertbotManagerWithBinary(binary)
+	hostRoot := strings.TrimSpace(os.Getenv("PAAS_HOST_ROOT"))
+	if hostRoot == "" {
+		hostRoot = defaultHostRoot
+	}
+	return NewCertbotManagerWithOptions(binary, hostRoot)
 }
 
 func NewCertbotManagerWithBinary(binary string) *CertbotManager {
+	return NewCertbotManagerWithOptions(binary, "")
+}
+
+func NewCertbotManagerWithOptions(binary, hostRoot string) *CertbotManager {
 	trimmed := strings.TrimSpace(binary)
 	if trimmed == "" {
 		trimmed = defaultCertbotBinary
 	}
 	return &CertbotManager{
 		binary:    trimmed,
+		hostRoot:  strings.TrimSpace(hostRoot),
 		runScript: runCommand,
 	}
 }
@@ -55,7 +65,7 @@ func (m *CertbotManager) EnsureCertificate(ctx context.Context, settings domain.
 		// Best effort: keep renewal configuration when available in certbot internals.
 	}
 
-	_, err := m.runScript(ctx, m.binary, args...)
+	_, err := runHostBinary(ctx, m.runScript, m.hostRoot, m.binary, args...)
 	if err != nil {
 		return fmt.Errorf("ensure certificate: %w", err)
 	}
@@ -69,7 +79,7 @@ func (m *CertbotManager) RemoveCertificate(ctx context.Context, domainName strin
 	}
 
 	args := []string{"delete", "--non-interactive", "--cert-name", domainValue}
-	output, err := m.runScript(ctx, m.binary, args...)
+	output, err := runHostBinary(ctx, m.runScript, m.hostRoot, m.binary, args...)
 	if err != nil {
 		lowerOutput := strings.ToLower(strings.TrimSpace(string(output)))
 		if strings.Contains(lowerOutput, "no such entry") || strings.Contains(lowerOutput, "no cert") {
@@ -81,7 +91,7 @@ func (m *CertbotManager) RemoveCertificate(ctx context.Context, domainName strin
 }
 
 func (m *CertbotManager) RenewCertificates(ctx context.Context) error {
-	_, err := m.runScript(ctx, m.binary, "renew")
+	_, err := runHostBinary(ctx, m.runScript, m.hostRoot, m.binary, "renew")
 	if err != nil {
 		return fmt.Errorf("renew certificates: %w", err)
 	}

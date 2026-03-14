@@ -37,8 +37,8 @@
 					<span>Enable automatic renewal</span>
 				</label>
 				<p class="text-xs text-muted-foreground mt-1">
-					When the container image is used in-container, renewal uses the same certbot binary as this dashboard process.
-					If you disable automatic renewal, add a manual renewal schedule and keep <code>nginx</code> reload enabled after renewal.
+					Renewal uses the host-installed <code>certbot</code> binary through the dashboard controller container.
+					If you disable automatic renewal, add a manual renewal schedule and keep host <code>nginx</code> reload enabled after renewal.
 				</p>
 				<label class="flex items-center gap-2 text-sm">
 					<input id="certbot-terms" type="checkbox" />
@@ -56,8 +56,8 @@
 				<li>Platform exposes this config through <code>/api/settings</code>.</li>
 				<li>When domain is not set, the panel is reachable via host IP.</li>
 				<li>TLS settings are applied only when "Enable HTTPS on proxy" is enabled for an app.</li>
-				<li>Certificates are issued and removed from within the dashboard container using certbot.</li>
-				<li>Keep ports 80/443 available on the container for Let&apos;s Encrypt and app traffic.</li>
+				<li>Certificates are issued and removed against the host installation of <code>certbot</code>.</li>
+				<li>Host <code>nginx</code> owns ports 80/443 and keeps routing active even if the dashboard container is removed.</li>
 			</ul>
 		</div>
 	</div>

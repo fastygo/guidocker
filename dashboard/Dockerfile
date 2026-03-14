@@ -22,9 +22,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     iproute2 \
     git \
     tzdata \
-    nginx \
-    certbot \
-    python3-certbot-nginx \
     netcat-openbsd && \
     rm -rf /var/lib/apt/lists/*
 
@@ -43,7 +40,6 @@ RUN if getent group docker >/dev/null 2>&1; then \
     fi && \
     useradd --system --create-home --home-dir /home/paas --shell /usr/sbin/nologin --groups docker paas && \
     mkdir -p /opt/stacks /app/data && \
-    mkdir -p /etc/nginx/conf.d /etc/letsencrypt /var/lib/letsencrypt /var/log/letsencrypt /run /run/nginx && \
     chown -R paas:paas /opt/stacks /app /home/paas
 
 WORKDIR /app
@@ -59,17 +55,11 @@ ENV SERVER_HOST=0.0.0.0 \
     PAAS_ADMIN_PASS=admin@123 \
     STACKS_DIR=/opt/stacks \
     BOLT_DB_FILE=/opt/stacks/.paas.db \
-    DASHBOARD_DATA_FILE=/app/data/dashboard.json \
-    PAAS_NGINX_BINARY=nginx \
-    PAAS_NGINX_SITES_DIR=/etc/nginx/conf.d \
-    PAAS_PROXY_UPSTREAM_HOST=host.docker.internal \
-    PAAS_CERTBOT_BINARY=certbot
+    DASHBOARD_DATA_FILE=/app/data/dashboard.json
 
 VOLUME ["/opt/stacks"]
 
 EXPOSE 3000
-EXPOSE 80
-EXPOSE 443
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=5s --retries=3 \
     CMD curl -sf http://localhost:3000/ || exit 1

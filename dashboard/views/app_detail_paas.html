@@ -23,7 +23,7 @@
 			<label class="block text-sm text-muted-foreground">Proxy target port
 				<input id="app-proxy-target-port" type="number" min="1" max="65535" class="mt-1 w-full rounded border border-border bg-background px-2 py-2 text-sm" placeholder="3000" />
 			</label>
-			<p class="text-xs text-muted-foreground">Use the port that is exposed by the app container and reachable from the host.</p>
+			<p class="text-xs text-muted-foreground">Use the internal container port that the host nginx proxy should target on the managed Docker network.</p>
 			<label class="flex items-center gap-2 text-sm">
 				<input id="app-use-tls" type="checkbox" />
 				<span>Enable HTTPS on proxy</span>

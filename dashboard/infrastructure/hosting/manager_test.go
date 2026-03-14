@@ -15,16 +15,17 @@ func TestNginxHostManager_ApplyRemoveAndLifecycle(t *testing.T) {
 
 	tempDir := t.TempDir()
 	ctx := context.Background()
-	manager := NewNginxHostManagerWithOptions("nginx", tempDir, "host.docker.internal")
+	manager := NewNginxHostManagerWithOptions("nginx", tempDir, "")
 	manager.runScript = func(_ context.Context, name string, args ...string) ([]byte, error) {
 		return []byte(name + " " + strings.Join(args, " ")), nil
 	}
 
 	app := &domain.App{
 		ID:             "app-1",
-		PublicDomain:    "app.example.com",
+		PublicDomain:   "app.example.com",
 		ProxyTargetPort: 8080,
-		UseTLS:          false,
+		ProxyContainerIP: "10.88.0.25",
+		UseTLS:         false,
 	}
 	if err := manager.ApplyRouting(ctx, app, domain.PlatformSettings{}); err != nil {
 		t.Fatalf("ApplyRouting() error = %v", err)
@@ -38,7 +39,7 @@ func TestNginxHostManager_ApplyRemoveAndLifecycle(t *testing.T) {
 	if got := string(contents); !strings.Contains(got, "server_name app.example.com") {
 		t.Fatalf("expected config to contain server name, got %q", got)
 	}
-	if got := string(contents); !strings.Contains(got, "host.docker.internal:8080") {
+	if got := string(contents); !strings.Contains(got, "10.88.0.25:8080") {
 		t.Fatalf("expected config to contain upstream target, got %q", got)
 	}
 
@@ -57,19 +58,20 @@ func TestNginxHostManager_ApplyRemoveAndLifecycle(t *testing.T) {
 	}
 }
 
-func TestNginxHostManager_AppliesCustomUpstreamHost(t *testing.T) {
+func TestNginxHostManager_AppliesResolvedContainerIP(t *testing.T) {
 	tempDir := t.TempDir()
 	ctx := context.Background()
-	manager := NewNginxHostManagerWithOptions("nginx", tempDir, "custom.internal")
+	manager := NewNginxHostManagerWithOptions("nginx", tempDir, "")
 	manager.runScript = func(_ context.Context, name string, args ...string) ([]byte, error) {
 		return []byte(name + " " + strings.Join(args, " ")), nil
 	}
 
 	app := &domain.App{
-		ID:              "custom-host-app",
-		PublicDomain:    "custom.internal.example",
-		ProxyTargetPort: 9090,
-		UseTLS:          false,
+		ID:               "custom-host-app",
+		PublicDomain:     "custom.internal.example",
+		ProxyTargetPort:  9090,
+		ProxyContainerIP: "172.24.0.10",
+		UseTLS:           false,
 	}
 	if err := manager.ApplyRouting(ctx, app, domain.PlatformSettings{}); err != nil {
 		t.Fatalf("ApplyRouting() error = %v", err)
@@ -80,8 +82,8 @@ func TestNginxHostManager_AppliesCustomUpstreamHost(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected config file to exist: %v", err)
 	}
-	if got := string(contents); !strings.Contains(got, "custom.internal:9090") {
-		t.Fatalf("expected config to contain custom upstream host, got %q", got)
+	if got := string(contents); !strings.Contains(got, "172.24.0.10:9090") {
+		t.Fatalf("expected config to contain resolved container IP, got %q", got)
 	}
 }
 
@@ -89,7 +91,7 @@ func TestNginxHostManager_GeneratesHTTPRedirectWhenTLSReady(t *testing.T) {
 	tempDir := t.TempDir()
 	certDir := t.TempDir()
 	ctx := context.Background()
-	manager := NewNginxHostManagerWithOptions("nginx", tempDir, "host.docker.internal")
+	manager := NewNginxHostManagerWithOptions("nginx", tempDir, "")
 	manager.runScript = func(_ context.Context, name string, args ...string) ([]byte, error) {
 		return []byte(name + " " + strings.Join(args, " ")), nil
 	}
@@ -112,10 +114,11 @@ func TestNginxHostManager_GeneratesHTTPRedirectWhenTLSReady(t *testing.T) {
 	}
 
 	app := &domain.App{
-		ID:             "app-2",
-		PublicDomain:    domainName,
-		ProxyTargetPort: 8080,
-		UseTLS:          true,
+		ID:               "app-2",
+		PublicDomain:     domainName,
+		ProxyTargetPort:  8080,
+		ProxyContainerIP: "10.99.0.15",
+		UseTLS:           true,
 	}
 	if err := manager.ApplyRouting(ctx, app, domain.PlatformSettings{}); err != nil {
 		t.Fatalf("ApplyRouting() error = %v", err)
@@ -143,13 +146,13 @@ func TestNginxHostManager_ApplyRouting_RequiresDomainAndPort(t *testing.T) {
 
 	tempDir := t.TempDir()
 	ctx := context.Background()
-	manager := NewNginxHostManagerWithOptions("nginx", tempDir, "host.docker.internal")
+	manager := NewNginxHostManagerWithOptions("nginx", tempDir, "")
 	manager.runScript = func(_ context.Context, name string, args ...string) ([]byte, error) {
 		t.Fatalf("unexpected runScript call: %s %v", name, args)
 		return nil, nil
 	}
 
-	if err := manager.ApplyRouting(ctx, &domain.App{ID: "app-1", PublicDomain: "", ProxyTargetPort: 8080}, domain.PlatformSettings{}); err != nil {
+	if err := manager.ApplyRouting(ctx, &domain.App{ID: "app-1", PublicDomain: "", ProxyTargetPort: 8080, ProxyContainerIP: "10.88.0.25"}, domain.PlatformSettings{}); err != nil {
 		t.Fatalf("ApplyRouting() error = %v", err)
 	}
 	appConfigPath := filepath.Join(tempDir, "paas-app-app-1.conf")
@@ -157,11 +160,40 @@ func TestNginxHostManager_ApplyRouting_RequiresDomainAndPort(t *testing.T) {
 		t.Fatalf("expected no config file when domain empty, stat error = %v", err)
 	}
 
-	if err := manager.ApplyRouting(ctx, &domain.App{ID: "app-1", PublicDomain: "app.example.com", ProxyTargetPort: 0}, domain.PlatformSettings{}); err != nil {
+	if err := manager.ApplyRouting(ctx, &domain.App{ID: "app-1", PublicDomain: "app.example.com", ProxyTargetPort: 0, ProxyContainerIP: "10.88.0.25"}, domain.PlatformSettings{}); err != nil {
 		t.Fatalf("ApplyRouting() error = %v", err)
 	}
 	if _, err := os.Stat(appConfigPath); !os.IsNotExist(err) {
 		t.Fatalf("expected no config file when proxy port is zero, stat error = %v", err)
+	}
+}
+
+func TestNginxHostManager_ValidateAndReloadUseHostRoot(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	manager := NewNginxHostManagerWithOptions("/usr/sbin/nginx", t.TempDir(), "/host")
+	var commands [][]string
+	manager.runScript = func(_ context.Context, name string, args ...string) ([]byte, error) {
+		commands = append(commands, append([]string{name}, args...))
+		return []byte("ok"), nil
+	}
+
+	if err := manager.ValidateRouting(ctx); err != nil {
+		t.Fatalf("ValidateRouting() error = %v", err)
+	}
+	if err := manager.ReloadRouting(ctx); err != nil {
+		t.Fatalf("ReloadRouting() error = %v", err)
+	}
+
+	if len(commands) != 2 {
+		t.Fatalf("expected two host commands, got %d", len(commands))
+	}
+	if got := strings.Join(commands[0], " "); got != "chroot /host /usr/sbin/nginx -t" {
+		t.Fatalf("unexpected validate command: %q", got)
+	}
+	if got := strings.Join(commands[1], " "); got != "chroot /host /usr/sbin/nginx -s reload" {
+		t.Fatalf("unexpected reload command: %q", got)
 	}
 }
 

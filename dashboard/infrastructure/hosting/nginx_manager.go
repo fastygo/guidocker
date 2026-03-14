@@ -11,26 +11,29 @@ import (
 )
 
 const defaultNginxSitesDir = "/etc/nginx/conf.d"
-const defaultNginxBinary = "nginx"
-const defaultProxyUpstreamHost = "host.docker.internal"
+const defaultNginxBinary = "/usr/sbin/nginx"
+const defaultHostRoot = "/host"
 const managedConfigNameTemplate = "paas-app-%s.conf"
 var certBasePath = "/etc/letsencrypt/live"
 
 type NginxHostManager struct {
 	binary    string
 	sitesDir  string
-	host      string
+	hostRoot  string
 	runScript func(context.Context, string, ...string) ([]byte, error)
 }
 
 func NewNginxHostManager() *NginxHostManager {
 	binary := strings.TrimSpace(os.Getenv("PAAS_NGINX_BINARY"))
 	sitesDir := strings.TrimSpace(os.Getenv("PAAS_NGINX_SITES_DIR"))
-	upstreamHost := strings.TrimSpace(os.Getenv("PAAS_PROXY_UPSTREAM_HOST"))
-	return NewNginxHostManagerWithOptions(binary, sitesDir, upstreamHost)
+	hostRoot := strings.TrimSpace(os.Getenv("PAAS_HOST_ROOT"))
+	if hostRoot == "" {
+		hostRoot = defaultHostRoot
+	}
+	return NewNginxHostManagerWithOptions(binary, sitesDir, hostRoot)
 }
 
-func NewNginxHostManagerWithOptions(binary, sitesDir, upstreamHost string) *NginxHostManager {
+func NewNginxHostManagerWithOptions(binary, sitesDir, hostRoot string) *NginxHostManager {
 	trimmedBinary := strings.TrimSpace(binary)
 	if trimmedBinary == "" {
 		trimmedBinary = defaultNginxBinary
@@ -39,32 +42,28 @@ func NewNginxHostManagerWithOptions(binary, sitesDir, upstreamHost string) *Ngin
 	if trimmedSitesDir == "" {
 		trimmedSitesDir = defaultNginxSitesDir
 	}
-	trimmedHost := strings.TrimSpace(upstreamHost)
-	if trimmedHost == "" {
-		trimmedHost = defaultProxyUpstreamHost
-	}
 	return &NginxHostManager{
 		binary:    trimmedBinary,
 		sitesDir:  trimmedSitesDir,
-		host:      trimmedHost,
+		hostRoot:  strings.TrimSpace(hostRoot),
 		runScript: runCommand,
 	}
 }
 
-func (m *NginxHostManager) ApplyRouting(_ context.Context, app *domain.App, _ domain.PlatformSettings) error {
+func (m *NginxHostManager) ApplyRouting(ctx context.Context, app *domain.App, _ domain.PlatformSettings) error {
 	if app == nil {
 		return domain.ErrAppNotFound
 	}
 
 	domainValue := strings.TrimSpace(app.PublicDomain)
-	if domainValue == "" || app.ProxyTargetPort <= 0 {
-		return nil
+	if domainValue == "" || app.ProxyTargetPort <= 0 || strings.TrimSpace(app.ProxyContainerIP) == "" {
+		return m.RemoveRouting(ctx, app, domain.PlatformSettings{})
 	}
 	if err := os.MkdirAll(m.sitesDir, 0o755); err != nil {
 		return fmt.Errorf("create nginx sites directory: %w", err)
 	}
 
-	config, err := buildNginxConfig(*app, m.host)
+	config, err := buildNginxConfig(*app)
 	if err != nil {
 		return err
 	}
@@ -84,7 +83,7 @@ func (m *NginxHostManager) RemoveRouting(_ context.Context, app *domain.App, _ d
 }
 
 func (m *NginxHostManager) ValidateRouting(ctx context.Context) error {
-	_, err := m.runScript(ctx, m.binary, "-t")
+	_, err := runHostBinary(ctx, m.runScript, m.hostRoot, m.binary, "-t")
 	if err != nil {
 		return fmt.Errorf("validate nginx config: %w", err)
 	}
@@ -92,7 +91,7 @@ func (m *NginxHostManager) ValidateRouting(ctx context.Context) error {
 }
 
 func (m *NginxHostManager) ReloadRouting(ctx context.Context) error {
-	_, err := m.runScript(ctx, m.binary, "-s", "reload")
+	_, err := runHostBinary(ctx, m.runScript, m.hostRoot, m.binary, "-s", "reload")
 	if err != nil {
 		return fmt.Errorf("reload nginx: %w", err)
 	}
@@ -107,7 +106,7 @@ func (m *NginxHostManager) configPath(app *domain.App) string {
 	return filepath.Join(m.sitesDir, fmt.Sprintf(managedConfigNameTemplate, appID))
 }
 
-func buildNginxConfig(app domain.App, proxyHost string) (string, error) {
+func buildNginxConfig(app domain.App) (string, error) {
 	domainValue := strings.TrimSpace(app.PublicDomain)
 	if domainValue == "" {
 		return "", domain.ErrInvalidDomain
@@ -115,9 +114,13 @@ func buildNginxConfig(app domain.App, proxyHost string) (string, error) {
 	if app.ProxyTargetPort <= 0 || app.ProxyTargetPort > 65535 {
 		return "", domain.ErrInvalidProxyPort
 	}
+	upstreamIP := strings.TrimSpace(app.ProxyContainerIP)
+	if upstreamIP == "" {
+		return "", domain.ErrContainerNotFound
+	}
 
 	targetPort := app.ProxyTargetPort
-	target := fmt.Sprintf("http://%s:%d", normalizeUpstreamHost(proxyHost), targetPort)
+	target := fmt.Sprintf("http://%s:%d", upstreamIP, targetPort)
 	useTLS := app.UseTLS
 	certInfo := certificateFiles(app.PublicDomain)
 	haveCert := certInfoExists(certInfo.fullChain, certInfo.privateKey)
@@ -163,14 +166,6 @@ server {
 	return httpBlock + "\n" + tlsBlock, nil
 }
 
-func normalizeUpstreamHost(value string) string {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return defaultProxyUpstreamHost
-	}
-	return trimmed
-}
-
 type certFiles struct {
 	fullChain string
 	privateKey string
@@ -214,6 +209,17 @@ func runCommand(ctx context.Context, name string, args ...string) ([]byte, error
 		return output, fmt.Errorf("%w: %s", err, strings.TrimSpace(string(output)))
 	}
 	return output, nil
+}
+
+func runHostBinary(ctx context.Context, runner func(context.Context, string, ...string) ([]byte, error), hostRoot, binary string, args ...string) ([]byte, error) {
+	trimmedRoot := strings.TrimSpace(hostRoot)
+	if trimmedRoot == "" {
+		return runner(ctx, binary, args...)
+	}
+	hostArgs := make([]string, 0, len(args)+2)
+	hostArgs = append(hostArgs, trimmedRoot, binary)
+	hostArgs = append(hostArgs, args...)
+	return runner(ctx, "chroot", hostArgs...)
 }
 
 
