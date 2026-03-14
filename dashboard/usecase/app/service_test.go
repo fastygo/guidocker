@@ -681,7 +681,7 @@ func TestService_DeleteApp_BlockingExternalContainerRequiresManualCleanup(t *tes
 			return []domain.Container{
 				{
 					ID:   "container-1",
-					Name: "legacy-app-1-worker",
+					Name: "legacy-app-1worker",
 				},
 			}, nil
 		},
@@ -689,7 +689,7 @@ func TestService_DeleteApp_BlockingExternalContainerRequiresManualCleanup(t *tes
 			return []domain.ContainerDetail{
 				{
 					ID:     "container-1",
-					Name:   "/legacy-app-1-worker",
+					Name:   "/legacy-app-1worker",
 					Labels: map[string]string{},
 				},
 			}, nil

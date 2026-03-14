@@ -90,7 +90,7 @@ docker run -d \
   --name "$NEW_NAME" \
   --restart unless-stopped \
   --group-add "$(getent group docker | cut -d: -f3)" \
-  -p 3001:3000 \
+  -p 3000:3000 \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v "$STACKS_DIR:/opt/stacks" \
   -e SERVER_HOST=0.0.0.0 \
