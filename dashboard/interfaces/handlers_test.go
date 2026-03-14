@@ -49,6 +49,25 @@ type fakeAppUseCase struct {
 	getLogsFn   func(context.Context, *domain.App, int) (string, error)
 }
 
+type fakePlatformSettingsUseCase struct {
+	getSettingsFn  func(context.Context) (*domain.PlatformSettings, error)
+	updateSettingsFn func(context.Context, domain.PlatformSettings) (*domain.PlatformSettings, error)
+}
+
+func (m *fakePlatformSettingsUseCase) GetPlatformSettings(ctx context.Context) (*domain.PlatformSettings, error) {
+	if m.getSettingsFn != nil {
+		return m.getSettingsFn(ctx)
+	}
+	return nil, domain.ErrMissingPlatformSettingsRepository
+}
+
+func (m *fakePlatformSettingsUseCase) UpdatePlatformSettings(ctx context.Context, settings domain.PlatformSettings) (*domain.PlatformSettings, error) {
+	if m.updateSettingsFn != nil {
+		return m.updateSettingsFn(ctx, settings)
+	}
+	return nil, domain.ErrMissingPlatformSettingsRepository
+}
+
 func (m *fakeDashboardUseCase) GetDashboardData(ctx context.Context) (*domain.DashboardData, error) {
 	if m.getErr != nil {
 		return nil, m.getErr
@@ -616,5 +635,139 @@ func TestDashboardHandler_APIDeploy_Success(t *testing.T) {
 	}
 	if payload["status"] != domain.AppStatusRunning {
 		t.Fatalf("expected running status, got %+v", payload["status"])
+	}
+}
+
+func TestDashboardHandler_APISettings_Get(t *testing.T) {
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetPlatformSettingsUseCase(&fakePlatformSettingsUseCase{
+		getSettingsFn: func(context.Context) (*domain.PlatformSettings, error) {
+			return &domain.PlatformSettings{
+				AdminHost:            "127.0.0.1",
+				AdminPort:            3001,
+				AdminDomain:          "admin.example.com",
+				AdminUseTLS:          true,
+				CertbotEmail:         "ops@example.com",
+				CertbotEnabled:       true,
+				CertbotStaging:       true,
+				CertbotAutoRenew:     false,
+				CertbotTermsAccepted: true,
+			}, nil
+		},
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/api/settings", nil)
+	recorder := httptest.NewRecorder()
+	handler.APISettings(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Result().StatusCode)
+	}
+
+	var payload domain.PlatformSettings
+	if err := json.NewDecoder(recorder.Body).Decode(&payload); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if payload.AdminHost != "127.0.0.1" || payload.AdminPort != 3001 {
+		t.Fatalf("unexpected platform settings payload: %+v", payload)
+	}
+}
+
+func TestDashboardHandler_APISettings_Put(t *testing.T) {
+	var saved domain.PlatformSettings
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetPlatformSettingsUseCase(&fakePlatformSettingsUseCase{
+		updateSettingsFn: func(_ context.Context, input domain.PlatformSettings) (*domain.PlatformSettings, error) {
+			saved = input
+			return &input, nil
+		},
+	})
+
+	body := bytes.NewBufferString(`{
+		"admin_host": "0.0.0.0",
+		"admin_port": 3200,
+		"admin_domain": "admin.example.com",
+		"admin_use_tls": true,
+		"certbot_email": "ops@example.com",
+		"certbot_enabled": true,
+		"certbot_staging": false,
+		"certbot_auto_renew": true,
+		"certbot_terms_accepted": true
+	}`)
+	request := httptest.NewRequest(http.MethodPut, "/api/settings", body)
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	handler.APISettings(recorder, request)
+	if recorder.Result().StatusCode != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Result().StatusCode)
+	}
+	if saved.AdminPort != 3200 || !saved.AdminUseTLS || !saved.CertbotEnabled {
+		t.Fatalf("unexpected saved settings: %+v", saved)
+	}
+}
+
+func TestDashboardHandler_APIAppConfig_GetAndUpdate(t *testing.T) {
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{
+		getFn: func(_ context.Context, id string) (*domain.App, error) {
+			if id != "app-1" {
+				t.Fatalf("expected app id app-1, got %q", id)
+			}
+			return &domain.App{
+				ID:              "app-1",
+				Name:            "demo",
+				PublicDomain:    "app.example.com",
+				ProxyTargetPort: 8080,
+				UseTLS:          true,
+				ManagedEnv: map[string]string{
+					"FOO": "bar",
+				},
+			}, nil
+		},
+		updateConfigFn: func(_ context.Context, id string, config domain.AppConfig) (*domain.App, error) {
+			if id != "app-1" {
+				t.Fatalf("expected app id app-1, got %q", id)
+			}
+			return &domain.App{
+				ID:              id,
+				Name:            "demo",
+				PublicDomain:    config.PublicDomain,
+				ProxyTargetPort: config.ProxyTargetPort,
+				UseTLS:          config.UseTLS,
+				ManagedEnv:      config.ManagedEnv,
+			}, nil
+		},
+	})
+
+	getRequest := httptest.NewRequest(http.MethodGet, "/api/apps/app-1/config", nil)
+	getRecorder := httptest.NewRecorder()
+	handler.APIAppRoutes(getRecorder, getRequest)
+	if getRecorder.Result().StatusCode != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, getRecorder.Result().StatusCode)
+	}
+	var getPayload domain.AppConfig
+	if err := json.NewDecoder(getRecorder.Body).Decode(&getPayload); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if getPayload.PublicDomain != "app.example.com" || getPayload.ProxyTargetPort != 8080 {
+		t.Fatalf("unexpected app config payload: %+v", getPayload)
+	}
+
+	putBody := bytes.NewBufferString(`{"public_domain":"landing.example.com","proxy_target_port":3000,"use_tls":false,"managed_env":{"API_URL":"https://landing"}}`)
+	putRequest := httptest.NewRequest(http.MethodPut, "/api/apps/app-1/config", putBody)
+	putRequest.Header.Set("Content-Type", "application/json")
+	putRecorder := httptest.NewRecorder()
+	handler.APIAppRoutes(putRecorder, putRequest)
+
+	if putRecorder.Result().StatusCode != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, putRecorder.Result().StatusCode)
+	}
+	var putPayload domain.AppConfig
+	if err := json.NewDecoder(putRecorder.Body).Decode(&putPayload); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if putPayload.PublicDomain != "landing.example.com" || putPayload.ProxyTargetPort != 3000 || putPayload.UseTLS != false {
+		t.Fatalf("unexpected updated app config payload: %+v", putPayload)
 	}
 }

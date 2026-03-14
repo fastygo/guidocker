@@ -80,6 +80,10 @@ func (s *Service) UpdatePlatformSettings(ctx context.Context, settings domain.Pl
 	if strings.TrimSpace(settings.AdminDomain) == "" {
 		settings.AdminDomain = current.AdminDomain
 	}
+	settings.CertbotEmail = strings.TrimSpace(settings.CertbotEmail)
+	if settings.CertbotEmail == "" {
+		settings.CertbotEmail = current.CertbotEmail
+	}
 
 	if current.CreatedAt.IsZero() {
 		settings.CreatedAt = now

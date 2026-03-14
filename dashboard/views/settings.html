@@ -21,6 +21,25 @@
 					<input id="admin-use-tls" type="checkbox" />
 					<span>Enable HTTPS for admin endpoint</span>
 				</label>
+				<label class="block text-sm text-muted-foreground">Let's Encrypt email
+					<input id="certbot-email" class="mt-1 w-full rounded border border-border bg-background px-2 py-2 text-sm" placeholder="admin@example.com" />
+				</label>
+				<label class="flex items-center gap-2 text-sm">
+					<input id="certbot-enabled" type="checkbox" />
+					<span>Enable certificate automation</span>
+				</label>
+				<label class="flex items-center gap-2 text-sm">
+					<input id="certbot-staging" type="checkbox" />
+					<span>Use Let's Encrypt staging environment</span>
+				</label>
+				<label class="flex items-center gap-2 text-sm">
+					<input id="certbot-auto-renew" type="checkbox" checked />
+					<span>Enable automatic renewal</span>
+				</label>
+				<label class="flex items-center gap-2 text-sm">
+					<input id="certbot-terms" type="checkbox" />
+					<span>I accept Let's Encrypt terms of service</span>
+				</label>
 				<button type="button" class="px-3 py-2 rounded border border-border text-sm" onclick="saveAdminSettings()">Save admin settings</button>
 				<div id="admin-settings-feedback" class="text-sm text-muted-foreground"></div>
 			</div>
@@ -52,6 +71,16 @@
 		if (portNode) portNode.value = payload.admin_port ? String(payload.admin_port) : '';
 		if (domainNode) domainNode.value = payload.admin_domain || '';
 		if (tlsNode) tlsNode.checked = !!payload.admin_use_tls;
+		const emailNode = document.getElementById('certbot-email');
+		const certbotEnabledNode = document.getElementById('certbot-enabled');
+		const certbotStagingNode = document.getElementById('certbot-staging');
+		const certbotAutoRenewNode = document.getElementById('certbot-auto-renew');
+		const certbotTermsNode = document.getElementById('certbot-terms');
+		if (emailNode) emailNode.value = payload.certbot_email || '';
+		if (certbotEnabledNode) certbotEnabledNode.checked = !!payload.certbot_enabled;
+		if (certbotStagingNode) certbotStagingNode.checked = !!payload.certbot_staging;
+		if (certbotAutoRenewNode) certbotAutoRenewNode.checked = payload.certbot_auto_renew !== false;
+		if (certbotTermsNode) certbotTermsNode.checked = !!payload.certbot_terms_accepted;
 	}
 
 	async function saveAdminSettings() {
@@ -62,11 +91,21 @@
 		const portNode = document.getElementById('admin-port');
 		const domainNode = document.getElementById('admin-domain');
 		const tlsNode = document.getElementById('admin-use-tls');
+		const emailNode = document.getElementById('certbot-email');
+		const certbotEnabledNode = document.getElementById('certbot-enabled');
+		const certbotStagingNode = document.getElementById('certbot-staging');
+		const certbotAutoRenewNode = document.getElementById('certbot-auto-renew');
+		const certbotTermsNode = document.getElementById('certbot-terms');
 		const payload = {
 			admin_host: hostNode ? hostNode.value.trim() : '',
 			admin_port: portNode ? Number.parseInt(portNode.value, 10) || 0 : 0,
 			admin_domain: domainNode ? domainNode.value.trim() : '',
 			admin_use_tls: tlsNode ? !!tlsNode.checked : false,
+			certbot_email: emailNode ? emailNode.value.trim() : '',
+			certbot_enabled: certbotEnabledNode ? !!certbotEnabledNode.checked : false,
+			certbot_staging: certbotStagingNode ? !!certbotStagingNode.checked : false,
+			certbot_auto_renew: certbotAutoRenewNode ? !!certbotAutoRenewNode.checked : false,
+			certbot_terms_accepted: certbotTermsNode ? !!certbotTermsNode.checked : false,
 		};
 
 		const response = await fetch('/api/settings', {

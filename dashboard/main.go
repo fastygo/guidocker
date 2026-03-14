@@ -8,6 +8,7 @@ import (
 	boltrepo "dashboard/infrastructure/bolt"
 	dockerrepo "dashboard/infrastructure/docker"
 	gitrepo "dashboard/infrastructure/git"
+	"dashboard/infrastructure/hosting"
 	"dashboard/interfaces"
 	"dashboard/interfaces/middleware"
 	appusecase "dashboard/usecase/app"
@@ -53,12 +54,20 @@ func resolvePortIfFree(port int) (int, error) {
 	return port, nil
 }
 
-func buildServer(cfg *config.Config, useCase domain.DashboardUseCase, appUseCase domain.AppUseCase, scanUseCase domain.ScannerUseCase, auth *middleware.SessionAuth, renderer *views.Renderer) *http.Server {
+func buildServer(
+	cfg *config.Config,
+	useCase domain.DashboardUseCase,
+	appUseCase domain.AppUseCase,
+	scanUseCase domain.ScannerUseCase,
+	platformSettingsUseCase domain.PlatformSettingsUseCase,
+	auth *middleware.SessionAuth,
+	renderer *views.Renderer,
+) *http.Server {
 	mux := http.NewServeMux()
 	handler := interfaces.NewDashboardHandler(useCase, renderer)
 	handler.SetAppUseCase(appUseCase)
 	handler.SetScanUseCase(scanUseCase)
-	handler.SetPlatformSettingsUseCase(platformSettingsService)
+	handler.SetPlatformSettingsUseCase(platformSettingsUseCase)
 	handler.SetLoginHandler(auth.LoginHandler())
 
 	interfaces.RegisterRoutes(mux, handler)
@@ -112,7 +121,12 @@ func main() {
 
 	appService := appusecase.NewAppService(appRepo, dockerRepository, gitRepository, cfg.Stacks.Dir).
 		WithImportTimeout(cfg.Import.Timeout).
-		WithImportTempPath(cfg.Import.TempPath)
+		WithImportTempPath(cfg.Import.TempPath).
+		WithPlatformSettingsUseCase(platformSettingsService).
+		WithHostManagers(
+			hosting.NewNginxHostManager(),
+			hosting.NewCertbotManager(),
+		)
 	auth := middleware.NewSessionAuth(cfg.Auth.AdminUser, cfg.Auth.AdminPass)
 	freePort, err := resolvePort(cfg.Server.Port)
 	if err != nil {
@@ -130,7 +144,7 @@ func main() {
 	}
 
 	scanService := scanusecase.NewScannerService(dockerRepository, appRepo, cfg.Stacks.Dir)
-	server := buildServer(cfg, service, appService, scanService, auth, renderer)
+	server := buildServer(cfg, service, appService, scanService, platformSettingsService, auth, renderer)
 
 	// Start server in goroutine
 	go func() {

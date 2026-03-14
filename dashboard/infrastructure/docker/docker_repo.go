@@ -19,6 +19,8 @@ type Repository struct {
 	stacksDir string
 }
 
+const managedEnvFileName = ".platform.env"
+
 // NewDockerRepository creates a docker-backed repository.
 func NewDockerRepository(stacksDir string) *Repository {
 	return &Repository{stacksDir: stacksDir}
@@ -37,7 +39,8 @@ func (r *Repository) Deploy(ctx context.Context, app *domain.App) error {
 		return fmt.Errorf("write compose file: %w", err)
 	}
 
-	_, err := r.run(ctx, "docker", "compose", "-f", composeFile, "up", "-d")
+	args := r.composeCommandArgs(app, "up", "-d")
+	_, err := r.run(ctx, "docker", args...)
 	if err != nil {
 		return fmt.Errorf("deploy app %s: %w", app.ID, err)
 	}
@@ -50,8 +53,8 @@ func (r *Repository) Stop(ctx context.Context, app *domain.App) error {
 		return domain.ErrAppNotFound
 	}
 
-	composeFile := r.composeFile(app)
-	_, err := r.run(ctx, "docker", "compose", "-f", composeFile, "down")
+	args := r.composeCommandArgs(app, "down")
+	_, err := r.run(ctx, "docker", args...)
 	if err != nil {
 		return fmt.Errorf("stop app %s: %w", app.ID, err)
 	}
@@ -64,19 +67,7 @@ func (r *Repository) Destroy(ctx context.Context, app *domain.App) error {
 		return domain.ErrAppNotFound
 	}
 
-	composeFile := r.composeFile(app)
-	args := []string{
-		"compose",
-		"-p", app.ID,
-		"down",
-		"--volumes",
-		"--remove-orphans",
-		"--timeout", "30",
-	}
-	if _, err := os.Stat(composeFile); err == nil {
-		args = append([]string{"compose", "-f", composeFile, "-p", app.ID}, args[2:]...)
-	}
-
+	args := r.composeCommandArgs(app, "down", "--volumes", "--remove-orphans", "--timeout", "30")
 	_, err := r.run(ctx, "docker", args...)
 	if err != nil {
 		return fmt.Errorf("destroy app %s: %w", app.ID, err)
@@ -90,8 +81,8 @@ func (r *Repository) Restart(ctx context.Context, app *domain.App) error {
 		return domain.ErrAppNotFound
 	}
 
-	composeFile := r.composeFile(app)
-	_, err := r.run(ctx, "docker", "compose", "-f", composeFile, "restart")
+	args := r.composeCommandArgs(app, "restart")
+	_, err := r.run(ctx, "docker", args...)
 	if err != nil {
 		return fmt.Errorf("restart app %s: %w", app.ID, err)
 	}
@@ -112,7 +103,7 @@ func (r *Repository) GetStatus(ctx context.Context, app *domain.App) (string, er
 		return "", err
 	}
 
-	output, err := r.run(ctx, "docker", "compose", "-f", composeFile, "ps", "--format", "json")
+	output, err := r.run(ctx, "docker", r.composeCommandArgs(app, "ps", "--format", "json")...)
 	if err != nil {
 		return "", fmt.Errorf("get status for app %s: %w", app.ID, err)
 	}
@@ -125,8 +116,7 @@ func (r *Repository) GetLogs(ctx context.Context, app *domain.App, lines int) (s
 		return "", domain.ErrAppNotFound
 	}
 
-	composeFile := r.composeFile(app)
-	output, err := r.run(ctx, "docker", "compose", "-f", composeFile, "logs", "--tail", strconv.Itoa(lines), "--no-color")
+	output, err := r.run(ctx, "docker", r.composeCommandArgs(app, "logs", "--tail", strconv.Itoa(lines), "--no-color")...)
 	if err != nil {
 		return "", fmt.Errorf("get logs for app %s: %w", app.ID, err)
 	}
@@ -227,6 +217,35 @@ func (r *Repository) composeFile(app *domain.App) string {
 	}
 
 	return filepath.Join(appDir, "docker-compose.yml")
+}
+
+func (r *Repository) composeEnvFile(app *domain.App) string {
+	appDir := strings.TrimSpace(app.Dir)
+	if appDir == "" {
+		appID := strings.TrimSpace(app.ID)
+		appDir = filepath.Join(r.stacksDir, appID)
+	}
+	return filepath.Join(appDir, managedEnvFileName)
+}
+
+func (r *Repository) composeCommandArgs(app *domain.App, command string, extra ...string) []string {
+	args := []string{"compose"}
+	composeFile := r.composeFile(app)
+	if composeFile != "" {
+		args = append(args, "-f", composeFile)
+	}
+	envFile := r.composeEnvFile(app)
+	if _, err := os.Stat(envFile); err == nil {
+		args = append(args, "--env-file", envFile)
+	}
+	args = append(args, "--ansi", "never")
+	projectID := strings.TrimSpace(app.ID)
+	if projectID != "" {
+		args = append(args, "-p", projectID)
+	}
+	args = append(args, command)
+	args = append(args, extra...)
+	return args
 }
 
 func (r *Repository) run(ctx context.Context, name string, args ...string) ([]byte, error) {

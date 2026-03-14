@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"os/exec"
@@ -30,14 +31,53 @@ const (
 type Service struct {
 	repository       domain.AppRepository
 	dockerRepository domain.DockerRepository
+	platformSettings domain.PlatformSettingsUseCase
 	stacksDir        string
 	gitRepository    domain.GitRepository
 	importTimeout    time.Duration
 	importTempPath   string
 	composeValidator composeValidatorFunc
+	hostManager      appHostManager
+	certManager      certManager
 }
 
 type composeValidatorFunc func(context.Context, string) error
+
+type appHostManager interface {
+	ApplyRouting(context.Context, *domain.App, domain.PlatformSettings) error
+	RemoveRouting(context.Context, *domain.App, domain.PlatformSettings) error
+	ValidateRouting(context.Context) error
+	ReloadRouting(context.Context) error
+}
+
+type certManager interface {
+	EnsureCertificate(context.Context, domain.PlatformSettings, string) error
+	RemoveCertificate(context.Context, string) error
+}
+
+type noopHostManager struct{}
+
+func (m noopHostManager) ApplyRouting(context.Context, *domain.App, domain.PlatformSettings) error {
+	return nil
+}
+func (m noopHostManager) RemoveRouting(context.Context, *domain.App, domain.PlatformSettings) error {
+	return nil
+}
+func (m noopHostManager) ValidateRouting(context.Context) error {
+	return nil
+}
+func (m noopHostManager) ReloadRouting(context.Context) error { return nil }
+
+type noopCertManager struct{}
+
+func (m noopCertManager) EnsureCertificate(context.Context, domain.PlatformSettings, string) error {
+	return nil
+}
+func (m noopCertManager) RemoveCertificate(context.Context, string) error {
+	return nil
+}
+
+const managedEnvFile = ".platform.env"
 
 // NewAppService creates a new app service with dependency injection.
 func NewAppService(repository domain.AppRepository, dockerRepository domain.DockerRepository, gitRepository domain.GitRepository, stacksDir string) *Service {
@@ -58,6 +98,8 @@ func NewAppService(repository domain.AppRepository, dockerRepository domain.Dock
 		importTimeout:    defaultImportTimeout,
 		importTempPath:   defaultImportTempPath,
 		composeValidator: validator,
+		hostManager:      noopHostManager{},
+		certManager:      noopCertManager{},
 	}
 }
 
@@ -78,6 +120,21 @@ func (s *Service) WithImportTempPath(path string) *Service {
 func (s *Service) WithComposeValidator(validator composeValidatorFunc) *Service {
 	if validator != nil {
 		s.composeValidator = validator
+	}
+	return s
+}
+
+func (s *Service) WithPlatformSettingsUseCase(useCase domain.PlatformSettingsUseCase) *Service {
+	s.platformSettings = useCase
+	return s
+}
+
+func (s *Service) WithHostManagers(hostManager appHostManager, certManager certManager) *Service {
+	if hostManager != nil {
+		s.hostManager = hostManager
+	}
+	if certManager != nil {
+		s.certManager = certManager
 	}
 	return s
 }
@@ -156,7 +213,11 @@ func (s *Service) UpdateAppConfig(ctx context.Context, id string, config domain.
 	if err != nil {
 		return nil, err
 	}
+	if err := s.validateAppConfig(ctx, app, config); err != nil {
+		return nil, err
+	}
 
+	previousDomain := app.PublicDomain
 	app.PublicDomain = strings.TrimSpace(config.PublicDomain)
 	app.ProxyTargetPort = config.ProxyTargetPort
 	app.UseTLS = config.UseTLS
@@ -166,6 +227,12 @@ func (s *Service) UpdateAppConfig(ctx context.Context, id string, config domain.
 	app.UpdatedAt = time.Now().UTC()
 
 	if err := s.repository.Update(ctx, app); err != nil {
+		return nil, err
+	}
+	if err := s.persistManagedEnv(ctx, app); err != nil {
+		return nil, err
+	}
+	if err := s.reconcileRouting(ctx, app, previousDomain); err != nil {
 		return nil, err
 	}
 
@@ -182,8 +249,17 @@ func (s *Service) DeleteApp(ctx context.Context, id string) error {
 		return err
 	}
 
+	previousDomain := app.PublicDomain
+	cleanupErr := error(nil)
+
 	if s.dockerRepository != nil {
-		_ = s.dockerRepository.Destroy(ctx, app)
+		cleanupErr = s.dockerRepository.Destroy(ctx, app)
+	}
+	if err := s.removeManagedEnv(app); err != nil && cleanupErr == nil {
+		cleanupErr = err
+	}
+	if err := s.removeRoutingArtifacts(ctx, app, previousDomain); err != nil && cleanupErr == nil {
+		cleanupErr = err
 	}
 
 	stackDir := strings.TrimSpace(app.Dir)
@@ -191,7 +267,13 @@ func (s *Service) DeleteApp(ctx context.Context, id string) error {
 		stackDir = filepath.Join(s.stacksDir, id)
 	}
 	if stackDir != "" {
-		_ = os.RemoveAll(stackDir)
+		if err := os.RemoveAll(stackDir); err != nil && cleanupErr == nil {
+			cleanupErr = err
+		}
+	}
+
+	if cleanupErr != nil {
+		return cleanupErr
 	}
 
 	return s.repository.Delete(ctx, id)
@@ -246,6 +328,12 @@ func (s *Service) DeployApp(ctx context.Context, id string) error {
 	app.Status = domain.AppStatusDeploying
 	app.UpdatedAt = time.Now().UTC()
 	if err := s.repository.Update(ctx, app); err != nil {
+		return err
+	}
+	if err := s.persistManagedEnv(ctx, app); err != nil {
+		return err
+	}
+	if err := s.reconcileRouting(ctx, app, app.PublicDomain); err != nil {
 		return err
 	}
 
@@ -712,4 +800,248 @@ func cloneManagedEnv(env map[string]string) map[string]string {
 	}
 
 	return cloned
+}
+
+func managedEnvPath(app *domain.App, stacksDir string) string {
+	if app == nil {
+		return filepath.Join(stacksDir, managedEnvFile)
+	}
+
+	appDir := strings.TrimSpace(app.Dir)
+	if appDir == "" {
+		appDir = filepath.Join(stacksDir, strings.TrimSpace(app.ID))
+	}
+	return filepath.Join(appDir, managedEnvFile)
+}
+
+func normalizeDomain(raw string) string {
+	return strings.ToLower(strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(raw), ".")))
+}
+
+func (s *Service) loadPlatformSettings(ctx context.Context) (domain.PlatformSettings, bool, error) {
+	if s.platformSettings == nil {
+		return domain.PlatformSettings{}, false, nil
+	}
+
+	settings, err := s.platformSettings.GetPlatformSettings(ctx)
+	if err != nil {
+		return domain.PlatformSettings{}, false, err
+	}
+	if settings == nil {
+		return domain.PlatformSettings{}, false, nil
+	}
+	return *settings, true, nil
+}
+
+func (s *Service) validateAppConfig(ctx context.Context, app *domain.App, config domain.AppConfig) error {
+	if app == nil {
+		return domain.ErrAppNotFound
+	}
+
+	domainValue := normalizeDomain(config.PublicDomain)
+	if domainValue != "" && !isDomainValid(domainValue) {
+		return domain.ErrInvalidDomain
+	}
+
+	if domainValue != "" {
+		if err := validateProxyTargetPort(config.ProxyTargetPort); err != nil {
+			return err
+		}
+	}
+
+	if domainValue != "" && app.PublicDomain == "" && config.ProxyTargetPort == 0 {
+		return domain.ErrInvalidProxyPort
+	}
+
+	if domainValue != "" && config.ProxyTargetPort > 0 {
+		settings, _, err := s.loadPlatformSettings(ctx)
+		if err != nil {
+			return err
+		}
+		if settings.AdminPort > 0 && config.ProxyTargetPort == settings.AdminPort {
+			return domain.ErrAdminPortConflict
+		}
+	}
+
+	if domainValue == "" {
+		return nil
+	}
+
+	if s.repository == nil {
+		return nil
+	}
+	apps, err := s.repository.List(ctx)
+	if err != nil {
+		return err
+	}
+	for _, other := range apps {
+		if other == nil || other.ID == app.ID {
+			continue
+		}
+		if normalizeDomain(other.PublicDomain) == domainValue {
+			return domain.ErrDomainConflict
+		}
+	}
+
+	return nil
+}
+
+func (s *Service) persistManagedEnv(ctx context.Context, app *domain.App) error {
+	if app == nil {
+		return domain.ErrAppNotFound
+	}
+	_ = ctx
+
+	envPath := managedEnvPath(app, s.stacksDir)
+	if len(app.ManagedEnv) == 0 {
+		if err := os.Remove(envPath); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove managed env file: %w", err)
+		}
+		return nil
+	}
+
+	if err := os.MkdirAll(filepath.Dir(envPath), 0o755); err != nil {
+		return fmt.Errorf("prepare app directory: %w", err)
+	}
+
+	lines := make([]string, 0, len(app.ManagedEnv))
+	for key, value := range app.ManagedEnv {
+		cleanKey := strings.TrimSpace(key)
+		if cleanKey == "" {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("%s=%s", cleanKey, strings.TrimSpace(value)))
+	}
+	return os.WriteFile(envPath, []byte(strings.Join(lines, "\n")+"\n"), 0o600)
+}
+
+func (s *Service) removeManagedEnv(app *domain.App) error {
+	if app == nil {
+		return nil
+	}
+	envPath := managedEnvPath(app, s.stacksDir)
+	if err := os.Remove(envPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove managed env file: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) reconcileRouting(ctx context.Context, app *domain.App, previousDomain string) error {
+	if app == nil {
+		return domain.ErrAppNotFound
+	}
+
+	settings, _, err := s.loadPlatformSettings(ctx)
+	if err != nil {
+		return err
+	}
+
+	currentDomain := normalizeDomain(app.PublicDomain)
+	previous := normalizeDomain(previousDomain)
+
+	if previous != "" && previous != currentDomain {
+		previousApp := *app
+		previousApp.PublicDomain = previous
+		if err := s.hostManager.RemoveRouting(ctx, &previousApp, settings); err != nil {
+			return err
+		}
+		if err := s.certManager.RemoveCertificate(ctx, previous); err != nil {
+			return err
+		}
+	}
+	if previous == currentDomain && previous != "" && !app.UseTLS {
+		if err := s.certManager.RemoveCertificate(ctx, previous); err != nil {
+			return err
+		}
+	}
+
+	if currentDomain == "" {
+		return nil
+	}
+	if err := s.hostManager.ValidateRouting(ctx); err != nil {
+		return err
+	}
+	if err := s.hostManager.ApplyRouting(ctx, app, settings); err != nil {
+		return err
+	}
+	if app.UseTLS {
+		if err := s.certManager.EnsureCertificate(ctx, settings, currentDomain); err != nil {
+			return err
+		}
+		if err := s.hostManager.ApplyRouting(ctx, app, settings); err != nil {
+			return err
+		}
+	}
+	return s.hostManager.ReloadRouting(ctx)
+}
+
+func (s *Service) removeRoutingArtifacts(ctx context.Context, app *domain.App, previousDomain string) error {
+	if app == nil {
+		return nil
+	}
+
+	settings, _, err := s.loadPlatformSettings(ctx)
+	if err != nil {
+		return err
+	}
+
+	domainValue := normalizeDomain(previousDomain)
+	if domainValue == "" {
+		domainValue = normalizeDomain(app.PublicDomain)
+	}
+	if domainValue == "" {
+		return nil
+	}
+
+	cloned := *app
+	cloned.PublicDomain = domainValue
+	if err := s.hostManager.RemoveRouting(ctx, &cloned, settings); err != nil {
+		return err
+	}
+	if err := s.certManager.RemoveCertificate(ctx, domainValue); err != nil {
+		return err
+	}
+
+	return s.hostManager.ReloadRouting(ctx)
+}
+
+func isDomainValid(value string) bool {
+	if value == "" {
+		return false
+	}
+	if net.ParseIP(value) != nil {
+		return false
+	}
+
+	value = normalizeDomain(value)
+	parts := strings.Split(value, ".")
+	if len(parts) < 2 {
+		return false
+	}
+	for _, part := range parts {
+		if part == "" || len(part) > 63 {
+			return false
+		}
+		if part[0] == '-' || part[len(part)-1] == '-' {
+			return false
+		}
+		for _, ch := range part {
+			switch {
+			case ch >= 'a' && ch <= 'z':
+			case ch >= '0' && ch <= '9':
+			case ch == '-':
+			default:
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
+func validateProxyTargetPort(port int) error {
+	if port <= 0 || port > maxAppPort {
+		return domain.ErrInvalidProxyPort
+	}
+	return nil
 }

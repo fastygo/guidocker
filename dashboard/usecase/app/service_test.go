@@ -225,7 +225,8 @@ func TestService_DeleteApp_DockerErrorIgnored(t *testing.T) {
 
 func TestService_CreateApp(t *testing.T) {
 	repo := newFakeAppRepository()
-	service := NewAppService(repo, &fakeDockerRepository{}, nil, "/opt/stacks")
+	baseDir := t.TempDir()
+	service := NewAppService(repo, &fakeDockerRepository{}, nil, baseDir)
 
 	app, err := service.CreateApp(context.Background(), "Demo App", `services:
   web:
@@ -239,7 +240,7 @@ func TestService_CreateApp(t *testing.T) {
 	if app.ID == "" {
 		t.Fatal("expected generated app ID")
 	}
-	expectedDir := filepath.Join("/opt/stacks", app.ID)
+	expectedDir := filepath.Join(baseDir, app.ID)
 	if app.Dir != expectedDir {
 		t.Fatalf("unexpected app dir %q", app.Dir)
 	}
@@ -253,7 +254,7 @@ func TestService_CreateApp(t *testing.T) {
 
 func TestService_CreateApp_MissingServices(t *testing.T) {
 	repo := newFakeAppRepository()
-	service := NewAppService(repo, &fakeDockerRepository{}, nil, "/opt/stacks")
+	service := NewAppService(repo, &fakeDockerRepository{}, nil, t.TempDir())
 
 	_, err := service.CreateApp(context.Background(), "Demo App", `web:
   image: nginx:alpine`)
@@ -411,11 +412,16 @@ func TestService_ImportRepo_InvalidComposeValidation(t *testing.T) {
 func TestService_DeployApp_Success(t *testing.T) {
 	repo := newFakeAppRepository()
 	now := time.Now().UTC()
+	stackBase := t.TempDir()
+	stackDir := filepath.Join(stackBase, "app-1")
+	if err := os.MkdirAll(stackDir, 0o755); err != nil {
+		t.Fatalf("failed to create stack dir: %v", err)
+	}
 	repo.items["app-1"] = &domain.App{
 		ID:          "app-1",
 		Name:        "Demo",
 		ComposeYAML: "services:\n  web:\n    image: nginx:alpine",
-		Dir:         "/opt/stacks/app-1",
+		Dir:         stackDir,
 		Status:      domain.AppStatusCreated,
 		CreatedAt:   now,
 		UpdatedAt:   now,
@@ -430,7 +436,7 @@ func TestService_DeployApp_Success(t *testing.T) {
 		getStatusFn: func(context.Context, *domain.App) (string, error) {
 			return domain.AppStatusRunning, nil
 		},
-	}, nil, "/opt/stacks")
+	}, nil, stackBase)
 
 	if err := service.DeployApp(context.Background(), "app-1"); err != nil {
 		t.Fatalf("DeployApp() error = %v", err)
@@ -446,11 +452,16 @@ func TestService_DeployApp_Success(t *testing.T) {
 
 func TestService_DeployApp_ErrorMarksAppFailed(t *testing.T) {
 	repo := newFakeAppRepository()
+	stackBase := t.TempDir()
+	stackDir := filepath.Join(stackBase, "app-1")
+	if err := os.MkdirAll(stackDir, 0o755); err != nil {
+		t.Fatalf("failed to create stack dir: %v", err)
+	}
 	repo.items["app-1"] = &domain.App{
 		ID:          "app-1",
 		Name:        "Demo",
 		ComposeYAML: "services:\n  web:\n    image: nginx:alpine",
-		Dir:         "/opt/stacks/app-1",
+		Dir:         stackDir,
 		Status:      domain.AppStatusCreated,
 	}
 
@@ -458,7 +469,7 @@ func TestService_DeployApp_ErrorMarksAppFailed(t *testing.T) {
 		deployFn: func(context.Context, *domain.App) error {
 			return errors.New("docker unavailable")
 		},
-	}, nil, "/opt/stacks")
+	}, nil, stackBase)
 
 	if err := service.DeployApp(context.Background(), "app-1"); err == nil {
 		t.Fatal("expected deploy error")
@@ -471,18 +482,23 @@ func TestService_DeployApp_ErrorMarksAppFailed(t *testing.T) {
 
 func TestService_UpdateAppConfig(t *testing.T) {
 	repo := newFakeAppRepository()
+	stackBase := t.TempDir()
+	stackDir := filepath.Join(stackBase, "app-1")
+	if err := os.MkdirAll(stackDir, 0o755); err != nil {
+		t.Fatalf("failed to create stack dir: %v", err)
+	}
 	repo.items["app-1"] = &domain.App{
 		ID:          "app-1",
 		Name:        "Demo",
 		ComposeYAML: "services:\n  web:\n    image: nginx:alpine",
-		Dir:         "/opt/stacks/app-1",
+		Dir:         stackDir,
 		Status:      domain.AppStatusCreated,
 		ManagedEnv: map[string]string{
 			"KEEP_ME": "1",
 		},
 	}
 
-	service := NewAppService(repo, &fakeDockerRepository{}, nil, "/opt/stacks")
+	service := NewAppService(repo, &fakeDockerRepository{}, nil, stackBase)
 	updated, err := service.UpdateAppConfig(context.Background(), "app-1", domain.AppConfig{
 		PublicDomain:    "app.example.com",
 		ProxyTargetPort: 8080,
@@ -515,11 +531,16 @@ func TestService_UpdateAppConfig(t *testing.T) {
 
 func TestService_StopApp(t *testing.T) {
 	repo := newFakeAppRepository()
+	stackBase := t.TempDir()
+	stackDir := filepath.Join(stackBase, "app-1")
+	if err := os.MkdirAll(stackDir, 0o755); err != nil {
+		t.Fatalf("failed to create stack dir: %v", err)
+	}
 	repo.items["app-1"] = &domain.App{
 		ID:          "app-1",
 		Name:        "Demo",
 		ComposeYAML: "services:\n  web:\n    image: nginx:alpine",
-		Dir:         "/opt/stacks/app-1",
+		Dir:         stackDir,
 		Status:      domain.AppStatusRunning,
 	}
 
@@ -529,7 +550,7 @@ func TestService_StopApp(t *testing.T) {
 			stopped = app.ID == "app-1"
 			return nil
 		},
-	}, nil, "/opt/stacks")
+	}, nil, stackBase)
 
 	if err := service.StopApp(context.Background(), "app-1"); err != nil {
 		t.Fatalf("StopApp() error = %v", err)

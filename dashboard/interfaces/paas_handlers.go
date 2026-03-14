@@ -37,6 +37,11 @@ type platformSettingsPayload struct {
 	AdminPort     int    `json:"admin_port"`
 	AdminDomain   string `json:"admin_domain"`
 	AdminUseTLS   bool   `json:"admin_use_tls"`
+	CertbotEmail  string `json:"certbot_email"`
+	CertbotEnabled bool  `json:"certbot_enabled"`
+	CertbotStaging bool  `json:"certbot_staging"`
+	CertbotAutoRenew bool `json:"certbot_auto_renew"`
+	CertbotTermsAccepted bool `json:"certbot_terms_accepted"`
 }
 
 func (h *DashboardHandler) Login(w http.ResponseWriter, r *http.Request) {
@@ -154,6 +159,11 @@ func (h *DashboardHandler) APISettings(w http.ResponseWriter, r *http.Request) {
 			AdminPort:   payload.AdminPort,
 			AdminDomain: payload.AdminDomain,
 			AdminUseTLS: payload.AdminUseTLS,
+			CertbotEmail: payload.CertbotEmail,
+			CertbotEnabled: payload.CertbotEnabled,
+			CertbotStaging: payload.CertbotStaging,
+			CertbotAutoRenew: payload.CertbotAutoRenew,
+			CertbotTermsAccepted: payload.CertbotTermsAccepted,
 		})
 		if err != nil {
 			h.writeErrorResponse(w, http.StatusInternalServerError, "Failed to update platform settings")
@@ -461,6 +471,10 @@ func (h *DashboardHandler) writeAppError(w http.ResponseWriter, err error) {
 		errors.Is(err, domain.ErrMissingComposeFile),
 		errors.Is(err, domain.ErrMissingDockerfile),
 		errors.Is(err, domain.ErrInvalidAppPort),
+	errors.Is(err, domain.ErrInvalidDomain),
+	errors.Is(err, domain.ErrInvalidProxyPort),
+	errors.Is(err, domain.ErrAdminPortConflict),
+	errors.Is(err, domain.ErrDomainConflict),
 		errors.Is(err, domain.ErrComposeConfigValidation):
 		h.writeErrorResponse(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, domain.ErrMissingGitRepository):
