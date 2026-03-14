@@ -88,3 +88,39 @@ func TestSettingsService_UpdatePlatformSettings_PersistsAndMerges(t *testing.T) 
 		t.Fatalf("expected saved admin domain dashboard.local, got %q", repo.saved.AdminDomain)
 	}
 }
+
+func TestSettingsService_UpdatePlatformSettings_UpdatesCertbotFlags(t *testing.T) {
+	repo := &fakePlatformSettingsRepository{
+		settings: &domain.PlatformSettings{
+			AdminHost:            "0.0.0.0",
+			AdminPort:            3000,
+			CertbotEmail:         "ops@example.com",
+			CertbotEnabled:       true,
+			CertbotStaging:       true,
+			CertbotAutoRenew:     true,
+			CertbotTermsAccepted: true,
+		},
+	}
+	service := NewPlatformSettingsService(repo, domain.PlatformSettings{
+		AdminHost: "127.0.0.1",
+		AdminPort: 3010,
+	})
+
+	updated, err := service.UpdatePlatformSettings(context.Background(), domain.PlatformSettings{
+		AdminDomain:          "dashboard.local",
+		CertbotEmail:         "ops2@example.com",
+		CertbotEnabled:       false,
+		CertbotStaging:       false,
+		CertbotAutoRenew:     false,
+		CertbotTermsAccepted: false,
+	})
+	if err != nil {
+		t.Fatalf("UpdatePlatformSettings() error = %v", err)
+	}
+	if updated.CertbotEmail != "ops2@example.com" {
+		t.Fatalf("expected certbot email from payload, got %q", updated.CertbotEmail)
+	}
+	if updated.CertbotEnabled || updated.CertbotStaging || updated.CertbotAutoRenew || updated.CertbotTermsAccepted {
+		t.Fatalf("expected payload certbot flags applied: %+v", updated)
+	}
+}

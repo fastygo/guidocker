@@ -250,16 +250,16 @@ func (s *Service) DeleteApp(ctx context.Context, id string) error {
 	}
 
 	previousDomain := app.PublicDomain
-	cleanupErr := error(nil)
+	var cleanupErrors []error
 
 	if s.dockerRepository != nil {
-		cleanupErr = s.dockerRepository.Destroy(ctx, app)
+		cleanupErrors = appendCleanupError(cleanupErrors, "destroy runtime", s.dockerRepository.Destroy(ctx, app))
 	}
-	if err := s.removeManagedEnv(app); err != nil && cleanupErr == nil {
-		cleanupErr = err
+	if err := s.removeRoutingArtifacts(ctx, app, previousDomain); err != nil {
+		cleanupErrors = appendCleanupError(cleanupErrors, "remove routing/certs", err)
 	}
-	if err := s.removeRoutingArtifacts(ctx, app, previousDomain); err != nil && cleanupErr == nil {
-		cleanupErr = err
+	if err := s.removeManagedEnv(app); err != nil {
+		cleanupErrors = appendCleanupError(cleanupErrors, "remove managed env", err)
 	}
 
 	stackDir := strings.TrimSpace(app.Dir)
@@ -267,16 +267,37 @@ func (s *Service) DeleteApp(ctx context.Context, id string) error {
 		stackDir = filepath.Join(s.stacksDir, id)
 	}
 	if stackDir != "" {
-		if err := os.RemoveAll(stackDir); err != nil && cleanupErr == nil {
-			cleanupErr = err
+		if err := os.RemoveAll(stackDir); err != nil {
+			cleanupErrors = appendCleanupError(cleanupErrors, "remove stack dir", err)
 		}
 	}
 
-	if cleanupErr != nil {
-		return cleanupErr
+	if err := mergeCleanupErrors(cleanupErrors); err != nil {
+		return err
 	}
 
 	return s.repository.Delete(ctx, id)
+}
+
+func appendCleanupError(errs []error, step string, err error) []error {
+	if err == nil {
+		return errs
+	}
+	return append(errs, fmt.Errorf("%s: %w", step, err))
+}
+
+func mergeCleanupErrors(errs []error) error {
+	if len(errs) == 0 {
+		return nil
+	}
+	if len(errs) == 1 {
+		return errs[0]
+	}
+	messages := make([]string, 0, len(errs))
+	for _, err := range errs {
+		messages = append(messages, err.Error())
+	}
+	return fmt.Errorf("%d cleanup errors: %s", len(errs), strings.Join(messages, "; "))
 }
 
 func (s *Service) GetApp(ctx context.Context, id string) (*domain.App, error) {
@@ -995,10 +1016,14 @@ func (s *Service) removeRoutingArtifacts(ctx context.Context, app *domain.App, p
 
 	cloned := *app
 	cloned.PublicDomain = domainValue
+	var cleanupErrors []error
 	if err := s.hostManager.RemoveRouting(ctx, &cloned, settings); err != nil {
-		return err
+		cleanupErrors = appendCleanupError(cleanupErrors, "remove routing", err)
 	}
 	if err := s.certManager.RemoveCertificate(ctx, domainValue); err != nil {
+		cleanupErrors = appendCleanupError(cleanupErrors, "remove certificate", err)
+	}
+	if err := mergeCleanupErrors(cleanupErrors); err != nil {
 		return err
 	}
 

@@ -529,6 +529,27 @@ func TestDashboardHandler_APIAppDelete_Success(t *testing.T) {
 	}
 }
 
+func TestDashboardHandler_APIAppDelete_NotFound(t *testing.T) {
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{
+		deleteFn: func(_ context.Context, id string) error {
+			if id != "missing-app" {
+				t.Fatalf("expected deleted app missing-app, got %q", id)
+			}
+			return domain.ErrAppNotFound
+		},
+	})
+
+	request := httptest.NewRequest(http.MethodDelete, "/api/apps/missing-app", nil)
+	recorder := httptest.NewRecorder()
+
+	handler.APIAppRoutes(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, recorder.Result().StatusCode)
+	}
+}
+
 func TestDashboardHandler_APIImport_Create(t *testing.T) {
 	handler := newTestHandler(&fakeDashboardUseCase{})
 	handler.SetAppUseCase(&fakeAppUseCase{
@@ -769,5 +790,78 @@ func TestDashboardHandler_APIAppConfig_GetAndUpdate(t *testing.T) {
 	}
 	if putPayload.PublicDomain != "landing.example.com" || putPayload.ProxyTargetPort != 3000 || putPayload.UseTLS != false {
 		t.Fatalf("unexpected updated app config payload: %+v", putPayload)
+	}
+}
+
+func TestDashboardHandler_APIAppConfig_Put_InvalidJSON(t *testing.T) {
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{})
+
+	request := httptest.NewRequest(http.MethodPut, "/api/apps/app-1/config", strings.NewReader(`bad-json`))
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	handler.APIAppRoutes(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, recorder.Result().StatusCode)
+	}
+}
+
+func TestDashboardHandler_APIAppConfig_Get_NotFound(t *testing.T) {
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{
+		getFn: func(_ context.Context, id string) (*domain.App, error) {
+			if id != "missing" {
+				t.Fatalf("expected app id missing, got %q", id)
+			}
+			return nil, domain.ErrAppNotFound
+		},
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/api/apps/missing/config", nil)
+	recorder := httptest.NewRecorder()
+	handler.APIAppRoutes(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, recorder.Result().StatusCode)
+	}
+}
+
+func TestDashboardHandler_APIAppConfig_Put_ReturnsBadRequestOnDomainError(t *testing.T) {
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{
+		updateConfigFn: func(_ context.Context, id string, config domain.AppConfig) (*domain.App, error) {
+			if id != "app-1" {
+				t.Fatalf("expected app id app-1, got %q", id)
+			}
+			if config.PublicDomain == "" {
+				t.Fatalf("expected public domain to be provided")
+			}
+			return nil, domain.ErrInvalidDomain
+		},
+	})
+
+	putBody := strings.NewReader(`{"public_domain":"bad_domain","proxy_target_port":8080}`)
+	request := httptest.NewRequest(http.MethodPut, "/api/apps/app-1/config", putBody)
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	handler.APIAppRoutes(recorder, request)
+	if recorder.Result().StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, recorder.Result().StatusCode)
+	}
+}
+
+func TestDashboardHandler_APIAppConfig_MethodNotAllowed(t *testing.T) {
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{})
+	request := httptest.NewRequest(http.MethodPatch, "/api/apps/app-1/config", nil)
+	recorder := httptest.NewRecorder()
+
+	handler.APIAppRoutes(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, recorder.Result().StatusCode)
 	}
 }

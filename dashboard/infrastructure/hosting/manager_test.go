@@ -2,6 +2,7 @@ package hosting
 
 import (
 	"context"
+	"errors"
 	"dashboard/domain"
 	"os"
 	"path/filepath"
@@ -56,6 +57,33 @@ func TestNginxHostManager_ApplyRemoveAndLifecycle(t *testing.T) {
 	}
 }
 
+func TestNginxHostManager_ApplyRouting_RequiresDomainAndPort(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	ctx := context.Background()
+	manager := NewNginxHostManagerWithOptions("nginx", tempDir)
+	manager.runScript = func(_ context.Context, name string, args ...string) ([]byte, error) {
+		t.Fatalf("unexpected runScript call: %s %v", name, args)
+		return nil, nil
+	}
+
+	if err := manager.ApplyRouting(ctx, &domain.App{ID: "app-1", PublicDomain: "", ProxyTargetPort: 8080}, domain.PlatformSettings{}); err != nil {
+		t.Fatalf("ApplyRouting() error = %v", err)
+	}
+	appConfigPath := filepath.Join(tempDir, "paas-app-app-1.conf")
+	if _, err := os.Stat(appConfigPath); !os.IsNotExist(err) {
+		t.Fatalf("expected no config file when domain empty, stat error = %v", err)
+	}
+
+	if err := manager.ApplyRouting(ctx, &domain.App{ID: "app-1", PublicDomain: "app.example.com", ProxyTargetPort: 0}, domain.PlatformSettings{}); err != nil {
+		t.Fatalf("ApplyRouting() error = %v", err)
+	}
+	if _, err := os.Stat(appConfigPath); !os.IsNotExist(err) {
+		t.Fatalf("expected no config file when proxy port is zero, stat error = %v", err)
+	}
+}
+
 func TestCertbotManager_EnsureCertificate(t *testing.T) {
 	t.Parallel()
 
@@ -106,6 +134,52 @@ func TestCertbotManager_RemoveCertificate(t *testing.T) {
 
 	if err := manager.RemoveCertificate(ctx, "app.example.com"); err != nil {
 		t.Fatalf("RemoveCertificate() error = %v", err)
+	}
+}
+
+func TestCertbotManager_RemoveCertificate_NoEntry_NoError(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	manager := NewCertbotManagerWithBinary("certbot")
+	manager.runScript = func(_ context.Context, name string, args ...string) ([]byte, error) {
+		if name != "certbot" {
+			t.Fatalf("expected certbot binary, got %q", name)
+		}
+		return []byte("No such entry \"app.example.com\""), errors.New("exit status 1")
+	}
+
+	if err := manager.RemoveCertificate(ctx, "app.example.com"); err != nil {
+		t.Fatalf("RemoveCertificate() error = %v", err)
+	}
+}
+
+func TestCertbotManager_EnsureCertificate_RequiresEmail(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	manager := NewCertbotManagerWithBinary("certbot")
+	err := manager.EnsureCertificate(ctx, domain.PlatformSettings{
+		CertbotEnabled:       true,
+		CertbotTermsAccepted: true,
+	}, "app.example.com")
+	if err == nil {
+		t.Fatal("expected email required error")
+	}
+}
+
+func TestCertbotManager_EnsureCertificate_RequiresTerms(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	manager := NewCertbotManagerWithBinary("certbot")
+	err := manager.EnsureCertificate(ctx, domain.PlatformSettings{
+		CertbotEnabled:  true,
+		CertbotEmail:    "ops@example.com",
+		CertbotStaging:  true,
+	}, "app.example.com")
+	if err == nil {
+		t.Fatal("expected terms accepted error")
 	}
 }
 

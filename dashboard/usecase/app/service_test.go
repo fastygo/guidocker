@@ -72,6 +72,71 @@ type fakeGitRepository struct {
 	cloneFn func(context.Context, string, string, string) (string, error)
 }
 
+type fakeHostManager struct {
+	removeRoutingFn  func(context.Context, *domain.App, domain.PlatformSettings) error
+	applyRoutingFn   func(context.Context, *domain.App, domain.PlatformSettings) error
+	validateRoutingF func(context.Context) error
+	reloadRoutingF  func(context.Context) error
+}
+
+func (h *fakeHostManager) ApplyRouting(ctx context.Context, app *domain.App, settings domain.PlatformSettings) error {
+	if h.applyRoutingFn != nil {
+		return h.applyRoutingFn(ctx, app, settings)
+	}
+	return nil
+}
+func (h *fakeHostManager) RemoveRouting(ctx context.Context, app *domain.App, settings domain.PlatformSettings) error {
+	if h.removeRoutingFn != nil {
+		return h.removeRoutingFn(ctx, app, settings)
+	}
+	return nil
+}
+func (h *fakeHostManager) ValidateRouting(ctx context.Context) error {
+	if h.validateRoutingF != nil {
+		return h.validateRoutingF(ctx)
+	}
+	return nil
+}
+func (h *fakeHostManager) ReloadRouting(ctx context.Context) error {
+	if h.reloadRoutingF != nil {
+		return h.reloadRoutingF(ctx)
+	}
+	return nil
+}
+
+type fakeCertManager struct {
+	ensureCertificateFn func(context.Context, domain.PlatformSettings, string) error
+	removeCertificateFn func(context.Context, string) error
+}
+
+func (m *fakeCertManager) EnsureCertificate(ctx context.Context, settings domain.PlatformSettings, domainName string) error {
+	if m.ensureCertificateFn != nil {
+		return m.ensureCertificateFn(ctx, settings, domainName)
+	}
+	return nil
+}
+func (m *fakeCertManager) RemoveCertificate(ctx context.Context, domainName string) error {
+	if m.removeCertificateFn != nil {
+		return m.removeCertificateFn(ctx, domainName)
+	}
+	return nil
+}
+
+type fakePlatformSettingsUseCase struct {
+	settings *domain.PlatformSettings
+}
+
+func (m *fakePlatformSettingsUseCase) GetPlatformSettings(context.Context) (*domain.PlatformSettings, error) {
+	if m.settings == nil {
+		return nil, nil
+	}
+	snapshot := *m.settings
+	return &snapshot, nil
+}
+func (m *fakePlatformSettingsUseCase) UpdatePlatformSettings(context.Context, domain.PlatformSettings) (*domain.PlatformSettings, error) {
+	return nil, nil
+}
+
 func (r *fakeDockerRepository) Deploy(ctx context.Context, app *domain.App) error {
 	if r.deployFn != nil {
 		return r.deployFn(ctx, app)
@@ -184,17 +249,23 @@ func TestService_DeleteApp_FullCleanup(t *testing.T) {
 	}
 }
 
-func TestService_DeleteApp_DockerErrorIgnored(t *testing.T) {
+func TestService_DeleteApp_DockerErrorReturnsError(t *testing.T) {
 	repo := newFakeAppRepository()
 	stackDir := filepath.Join(t.TempDir(), "app-1")
 	if err := os.MkdirAll(stackDir, 0o755); err != nil {
 		t.Fatalf("failed to create stack dir: %v", err)
+	}
+	managedEnvPath := filepath.Join(stackDir, ".platform.env")
+	if err := os.WriteFile(managedEnvPath, []byte("FOO=bar\n"), 0o644); err != nil {
+		t.Fatalf("failed to create managed env file: %v", err)
 	}
 	repo.items["app-1"] = &domain.App{
 		ID:          "app-1",
 		Name:        "Demo",
 		ComposeYAML: "services:\n  web:\n    image: nginx:alpine",
 		Dir:         stackDir,
+		PublicDomain: "demo.example.com",
+		UseTLS:      false,
 		Status:      domain.AppStatusCreated,
 		CreatedAt:   time.Now().UTC(),
 		UpdatedAt:   time.Now().UTC(),
@@ -208,18 +279,255 @@ func TestService_DeleteApp_DockerErrorIgnored(t *testing.T) {
 		},
 	}, nil, "/opt/stacks")
 
-	if err := service.DeleteApp(context.Background(), "app-1"); err != nil {
-		t.Fatalf("DeleteApp() error = %v", err)
+	if err := service.DeleteApp(context.Background(), "app-1"); err == nil {
+		t.Fatalf("DeleteApp() expected error")
 	}
 
 	if !destroyed {
 		t.Fatalf("expected destroy to be called")
+	}
+	if _, ok := repo.items["app-1"]; !ok {
+		t.Fatalf("expected app not removed from repository on cleanup error")
+	}
+	if _, err := os.Stat(stackDir); !os.IsNotExist(err) {
+		t.Fatalf("expected stack dir removed, stat error: %v", err)
+	}
+	if _, err := os.Stat(managedEnvPath); !os.IsNotExist(err) {
+		t.Fatalf("expected managed env file removed, stat error: %v", err)
+	}
+}
+
+func TestService_DeleteApp_RemovesRoutingEnvAndCertBeforeRecordDeletion(t *testing.T) {
+	repo := newFakeAppRepository()
+	baseDir := t.TempDir()
+	stackDir := filepath.Join(baseDir, "app-1")
+	if err := os.MkdirAll(stackDir, 0o755); err != nil {
+		t.Fatalf("failed to create stack dir: %v", err)
+	}
+	managedEnvPath := filepath.Join(stackDir, ".platform.env")
+	if err := os.WriteFile(managedEnvPath, []byte("FOO=bar\n"), 0o644); err != nil {
+		t.Fatalf("failed to create managed env file: %v", err)
+	}
+
+	repo.items["app-1"] = &domain.App{
+		ID:              "app-1",
+		Name:            "Demo",
+		ComposeYAML:     "services:\n  web:\n    image: nginx:alpine",
+		Dir:             stackDir,
+		PublicDomain:    "demo.example.com",
+		ProxyTargetPort: 8080,
+		UseTLS:          true,
+		Status:          domain.AppStatusCreated,
+		CreatedAt:       time.Now().UTC(),
+		UpdatedAt:       time.Now().UTC(),
+	}
+
+	callOrder := []string{}
+	hostManager := &fakeHostManager{
+		removeRoutingFn: func(_ context.Context, app *domain.App, _ domain.PlatformSettings) error {
+			if app.ID != "app-1" {
+				t.Fatalf("unexpected app id: %s", app.ID)
+			}
+			callOrder = append(callOrder, "remove-routing")
+			if _, err := os.Stat(managedEnvPath); err != nil {
+				t.Fatalf("managed env file should still exist while routing is removed: %v", err)
+			}
+			return nil
+		},
+	}
+	certRemoved := false
+	certManager := &fakeCertManager{
+		removeCertificateFn: func(_ context.Context, domainName string) error {
+			if domainName != "demo.example.com" {
+				t.Fatalf("unexpected domain for cert removal: %q", domainName)
+			}
+			callOrder = append(callOrder, "remove-certificate")
+			certRemoved = true
+			if _, err := os.Stat(managedEnvPath); err != nil {
+				t.Fatalf("managed env file should still exist while cert is removed: %v", err)
+			}
+			return nil
+		},
+	}
+
+	service := NewAppService(repo, &fakeDockerRepository{}, nil, baseDir).
+		WithHostManagers(hostManager, certManager)
+
+	if err := service.DeleteApp(context.Background(), "app-1"); err != nil {
+		t.Fatalf("DeleteApp() error = %v", err)
+	}
+
+	if !certRemoved {
+		t.Fatalf("expected certificate removal to be called")
+	}
+	if len(callOrder) < 2 {
+		t.Fatalf("expected remove-routing and remove-certificate calls, got: %#v", callOrder)
+	}
+	if callOrder[0] != "remove-routing" || callOrder[1] != "remove-certificate" {
+		t.Fatalf("expected routing removal before certificate removal, got: %#v", callOrder)
+	}
+	if _, err := os.Stat(managedEnvPath); !os.IsNotExist(err) {
+		t.Fatalf("expected managed env file removed, stat error: %v", err)
 	}
 	if _, ok := repo.items["app-1"]; ok {
 		t.Fatalf("expected app removed from repository")
 	}
 	if _, err := os.Stat(stackDir); !os.IsNotExist(err) {
 		t.Fatalf("expected stack dir removed, stat error: %v", err)
+	}
+}
+
+func TestService_UpdateAppConfig_ValidatesAdminPortConflict(t *testing.T) {
+	repo := newFakeAppRepository()
+	baseDir := t.TempDir()
+	repo.items["app-1"] = &domain.App{
+		ID:          "app-1",
+		Name:        "Demo",
+		ComposeYAML: "services:\n  web:\n    image: nginx:alpine",
+		Dir:         filepath.Join(baseDir, "app-1"),
+		Status:      domain.AppStatusCreated,
+		CreatedAt:   time.Now().UTC(),
+		UpdatedAt:   time.Now().UTC(),
+	}
+
+	service := NewAppService(repo, &fakeDockerRepository{}, nil, baseDir).
+		WithPlatformSettingsUseCase(&fakePlatformSettingsUseCase{
+			settings: &domain.PlatformSettings{
+				AdminPort: 3000,
+			},
+		})
+
+	_, err := service.UpdateAppConfig(context.Background(), "app-1", domain.AppConfig{
+		PublicDomain:    "demo.example.com",
+		ProxyTargetPort: 3000,
+	})
+	if !errors.Is(err, domain.ErrAdminPortConflict) {
+		t.Fatalf("expected ErrAdminPortConflict, got %v", err)
+	}
+}
+
+func TestService_UpdateAppConfig_ValidatesDomainAndPort(t *testing.T) {
+	repo := newFakeAppRepository()
+	baseDir := t.TempDir()
+	repo.items["app-1"] = &domain.App{
+		ID:          "app-1",
+		Name:        "Demo",
+		ComposeYAML: "services:\n  web:\n    image: nginx:alpine",
+		Dir:         filepath.Join(baseDir, "app-1"),
+		Status:      domain.AppStatusCreated,
+		CreatedAt:   time.Now().UTC(),
+		UpdatedAt:   time.Now().UTC(),
+	}
+
+	service := NewAppService(repo, &fakeDockerRepository{}, nil, baseDir)
+
+	_, err := service.UpdateAppConfig(context.Background(), "app-1", domain.AppConfig{
+		PublicDomain: "bad_domain",
+	})
+	if !errors.Is(err, domain.ErrInvalidDomain) {
+		t.Fatalf("expected ErrInvalidDomain, got %v", err)
+	}
+	_, err = service.UpdateAppConfig(context.Background(), "app-1", domain.AppConfig{
+		PublicDomain: "example.com",
+	})
+	if !errors.Is(err, domain.ErrInvalidProxyPort) {
+		t.Fatalf("expected ErrInvalidProxyPort, got %v", err)
+	}
+}
+
+func TestService_UpdateAppConfig_DetectsDomainConflict(t *testing.T) {
+	repo := newFakeAppRepository()
+	baseDir := t.TempDir()
+	repo.items["app-1"] = &domain.App{
+		ID:          "app-1",
+		Name:        "Demo",
+		ComposeYAML: "services:\n  web:\n    image: nginx:alpine",
+		Dir:         filepath.Join(baseDir, "app-1"),
+		Status:      domain.AppStatusCreated,
+		CreatedAt:   time.Now().UTC(),
+		UpdatedAt:   time.Now().UTC(),
+	}
+	repo.items["app-2"] = &domain.App{
+		ID:              "app-2",
+		Name:            "Another",
+		ComposeYAML:     "services:\n  web:\n    image: nginx:alpine",
+		Dir:             filepath.Join(baseDir, "app-2"),
+		Status:          domain.AppStatusCreated,
+		PublicDomain:    "demo.example.com",
+		ProxyTargetPort: 8080,
+		CreatedAt:       time.Now().UTC(),
+		UpdatedAt:       time.Now().UTC(),
+	}
+
+	service := NewAppService(repo, &fakeDockerRepository{}, nil, baseDir)
+	_, err := service.UpdateAppConfig(context.Background(), "app-1", domain.AppConfig{
+		PublicDomain:    "Demo.Example.Com",
+		ProxyTargetPort: 3000,
+	})
+	if !errors.Is(err, domain.ErrDomainConflict) {
+		t.Fatalf("expected ErrDomainConflict, got %v", err)
+	}
+}
+
+func TestService_DeleteApp_AggregatesCleanupErrorsButCleansManagedArtifacts(t *testing.T) {
+	repo := newFakeAppRepository()
+	baseDir := t.TempDir()
+	stackDir := filepath.Join(baseDir, "app-1")
+	if err := os.MkdirAll(stackDir, 0o755); err != nil {
+		t.Fatalf("failed to create stack dir: %v", err)
+	}
+	managedEnvPath := filepath.Join(stackDir, ".platform.env")
+	if err := os.WriteFile(managedEnvPath, []byte("FOO=bar\n"), 0o644); err != nil {
+		t.Fatalf("failed to create managed env file: %v", err)
+	}
+	repo.items["app-1"] = &domain.App{
+		ID:              "app-1",
+		Name:            "Demo",
+		ComposeYAML:     "services:\n  web:\n    image: nginx:alpine",
+		Dir:             stackDir,
+		PublicDomain:    "demo.example.com",
+		ProxyTargetPort: 8080,
+		UseTLS:          true,
+		Status:          domain.AppStatusCreated,
+		CreatedAt:       time.Now().UTC(),
+		UpdatedAt:       time.Now().UTC(),
+	}
+
+	callOrder := []string{}
+	hostManager := &fakeHostManager{
+		removeRoutingFn: func(_ context.Context, _ *domain.App, _ domain.PlatformSettings) error {
+			callOrder = append(callOrder, "remove-routing")
+			return errors.New("routing failed")
+		},
+	}
+	certManager := &fakeCertManager{
+		removeCertificateFn: func(_ context.Context, _ string) error {
+			callOrder = append(callOrder, "remove-certificate")
+			return errors.New("certificate failed")
+		},
+	}
+
+	service := NewAppService(repo, &fakeDockerRepository{}, nil, baseDir).
+		WithHostManagers(hostManager, certManager)
+
+	err := service.DeleteApp(context.Background(), "app-1")
+	if err == nil {
+		t.Fatalf("expected cleanup error")
+	}
+	if !strings.Contains(err.Error(), "2 cleanup errors") {
+		t.Fatalf("expected aggregated cleanup error, got %q", err.Error())
+	}
+	if len(callOrder) != 2 || callOrder[0] != "remove-routing" || callOrder[1] != "remove-certificate" {
+		t.Fatalf("expected routing and certificate removal attempts in order, got %#v", callOrder)
+	}
+	if _, ok := repo.items["app-1"]; !ok {
+		t.Fatalf("expected app not removed from repository on cleanup error")
+	}
+	if _, err := os.Stat(stackDir); !os.IsNotExist(err) {
+		t.Fatalf("expected stack dir removed, stat error: %v", err)
+	}
+	if _, err := os.Stat(managedEnvPath); !os.IsNotExist(err) {
+		t.Fatalf("expected managed env file removed, stat error: %v", err)
 	}
 }
 
