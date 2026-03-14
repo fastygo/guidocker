@@ -26,4 +26,5 @@ var (
 	ErrMissingDockerfile       = errors.New("missing Dockerfile")
 	ErrInvalidAppPort          = errors.New("invalid app port")
 	ErrComposeConfigValidation = errors.New("compose file validation failed")
+	ErrReservedIngressPort      = errors.New("reserved ingress port in compose mapping")
 )

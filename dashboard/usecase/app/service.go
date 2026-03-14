@@ -13,11 +13,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
 
 var portLinePattern = regexp.MustCompile(`(?m)^\s*-\s*["']?([0-9]+(?::[0-9]+)+)["']?\s*$`)
+var composePortsHeaderPattern = regexp.MustCompile(`^(\s*)ports\s*:\s*(.*)$`)
+var publishedPortPattern = regexp.MustCompile(`(?i)^\s*published\s*:\s*([0-9]{1,5})\s*$`)
 
 const (
 	defaultComposePath      = "docker-compose.yml"
@@ -146,6 +149,9 @@ func (s *Service) CreateApp(ctx context.Context, name, composeYAML string) (*dom
 	if err := validateAppInput(name, composeYAML); err != nil {
 		return nil, err
 	}
+	if err := validateReservedIngressPorts(composeYAML); err != nil {
+		return nil, err
+	}
 
 	now := time.Now().UTC()
 	appID, err := newAppID(name)
@@ -178,6 +184,9 @@ func (s *Service) UpdateApp(ctx context.Context, id, name, composeYAML string) (
 		return nil, domain.ErrMissingAppRepository
 	}
 	if err := validateAppInput(name, composeYAML); err != nil {
+		return nil, err
+	}
+	if err := validateReservedIngressPorts(composeYAML); err != nil {
 		return nil, err
 	}
 
@@ -631,6 +640,9 @@ func (s *Service) resolveCompose(ctx context.Context, repoDir, requestedPath str
 		if err != nil {
 			return "", "", "", err
 		}
+		if composeValidationErr := validateReservedIngressPorts(string(composeBytes)); composeValidationErr != nil {
+			return "", "", "", composeValidationErr
+		}
 		return domain.SourceTypeRepoCompose, composePath, string(composeBytes), nil
 	}
 
@@ -649,6 +661,9 @@ func (s *Service) resolveCompose(ctx context.Context, repoDir, requestedPath str
 	if fallbackPort <= 0 || fallbackPort > maxAppPort {
 		return "", "", "", domain.ErrInvalidAppPort
 	}
+	if err := validateAppPortForIngress(fallbackPort); err != nil {
+		return "", "", "", err
+	}
 
 	generatedCompose := generateComposeFromDockerfile(fallbackPort)
 	generatedPath := filepath.Join(repoDir, defaultGeneratedCompose)
@@ -663,6 +678,168 @@ func (s *Service) resolveCompose(ctx context.Context, repoDir, requestedPath str
 	}
 
 	return domain.SourceTypeRepoDockerfile, defaultGeneratedCompose, generatedCompose, nil
+}
+
+func validateReservedIngressPorts(raw string) error {
+	if reservedPortInCompose(raw) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%w: do not expose ports 80/443 directly; reserve them for platform ingress", domain.ErrReservedIngressPort)
+}
+
+func validateAppPortForIngress(port int) error {
+	switch port {
+	case 80, 443:
+		return fmt.Errorf("%w: app fallback port cannot be 80/443", domain.ErrReservedIngressPort)
+	default:
+		return nil
+	}
+}
+
+func reservedPortInCompose(raw string) int {
+	lines := strings.Split(raw, "\n")
+	inPortsBlock := false
+	portsIndent := 0
+
+	for _, line := range lines {
+		line = stripComposeComment(line)
+		trimmedLine := strings.TrimSpace(line)
+		if trimmedLine == "" {
+			continue
+		}
+
+		if !inPortsBlock {
+			header := composePortsHeaderPattern.FindStringSubmatch(line)
+			if len(header) == 3 {
+				portsIndent = leadingSpaceCount(header[1])
+				inline := strings.TrimSpace(header[2])
+				if port := parseReservedPortFromInlineList(inline); port > 0 {
+					return port
+				}
+				inPortsBlock = inline == "" || !strings.HasSuffix(inline, "]")
+				continue
+			}
+		}
+
+		if inPortsBlock {
+			currentIndent := leadingSpaceCount(line)
+			if currentIndent <= portsIndent {
+				inPortsBlock = false
+				continue
+			}
+
+			if port := parseReservedPortFromListItem(trimmedLine); port > 0 {
+				return port
+			}
+			if port := parsePublishedPort(trimmedLine); port > 0 {
+				return port
+			}
+		}
+	}
+
+	return 0
+}
+
+func parseReservedPortFromInlineList(value string) int {
+	value = strings.TrimSpace(value)
+	if value == "" || value == "[]" {
+		return 0
+	}
+	if strings.HasPrefix(value, "[") && strings.HasSuffix(value, "]") {
+		content := strings.TrimSuffix(strings.TrimPrefix(value, "["), "]")
+		for _, item := range strings.Split(content, ",") {
+			port := parseReservedHostPort(strings.TrimSpace(item))
+			if port > 0 {
+				return port
+			}
+		}
+	}
+	return 0
+}
+
+func parseReservedPortFromListItem(line string) int {
+	line = strings.TrimSpace(line)
+	if line == "" || strings.HasPrefix(line, "#") {
+		return 0
+	}
+	if !strings.HasPrefix(line, "-") {
+		return 0
+	}
+	value := strings.TrimSpace(strings.TrimPrefix(line, "-"))
+	return parseReservedHostPort(value)
+}
+
+func parsePublishedPort(line string) int {
+	matches := publishedPortPattern.FindStringSubmatch(line)
+	if len(matches) != 2 {
+		return 0
+	}
+	rawValue := strings.Trim(matches[1], `"'`)
+	port, err := strconv.Atoi(strings.TrimSpace(rawValue))
+	if err != nil {
+		return 0
+	}
+	return port
+}
+
+func parseReservedHostPort(value string) int {
+	value = strings.TrimSpace(value)
+	value = strings.Trim(value, `"'`)
+	if slash := strings.Index(value, "/"); slash >= 0 {
+		value = value[:slash]
+	}
+	value = strings.TrimSpace(value)
+	if !strings.Contains(value, ":") {
+		return 0
+	}
+	if strings.Contains(value, " ") {
+		return 0
+	}
+	if strings.HasPrefix(value, "[") {
+		closeIdx := strings.Index(value, "]")
+		if closeIdx < 0 {
+			return 0
+		}
+		value = value[closeIdx+1:]
+		if len(value) == 0 || value[0] != ':' {
+			return 0
+		}
+		value = strings.TrimPrefix(value, ":")
+	}
+	parts := strings.Split(value, ":")
+	if len(parts) < 2 {
+		return 0
+	}
+
+	hostPart := parts[0]
+	if len(parts) > 2 {
+		hostPart = parts[len(parts)-2]
+	}
+	if hostPart == "" {
+		return 0
+	}
+
+	port, err := strconv.Atoi(strings.TrimSpace(hostPart))
+	if err != nil {
+		return 0
+	}
+	if port != 80 && port != 443 {
+		return 0
+	}
+
+	return port
+}
+
+func leadingSpaceCount(value string) int {
+	return len(value) - len(strings.TrimLeft(value, " "))
+}
+
+func stripComposeComment(value string) string {
+	commentAt := strings.Index(value, "#")
+	if commentAt >= 0 {
+		return value[:commentAt]
+	}
+	return value
 }
 
 func (s *Service) resolveComposePath(repoDir, requestedPath string) (string, error) {

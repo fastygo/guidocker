@@ -571,6 +571,44 @@ func TestService_CreateApp_MissingServices(t *testing.T) {
 	}
 }
 
+func TestService_CreateApp_RejectsReservedIngressPort(t *testing.T) {
+	repo := newFakeAppRepository()
+	service := NewAppService(repo, &fakeDockerRepository{}, nil, t.TempDir())
+
+	_, err := service.CreateApp(context.Background(), "Demo App", `services:
+  web:
+    image: nginx:alpine
+    ports:
+      - "80:80"`)
+	if !errors.Is(err, domain.ErrReservedIngressPort) {
+		t.Fatalf("expected ErrReservedIngressPort, got %v", err)
+	}
+}
+
+func TestService_UpdateApp_RejectsReservedIngressPort(t *testing.T) {
+	repo := newFakeAppRepository()
+	baseDir := t.TempDir()
+	repo.items["app-1"] = &domain.App{
+		ID:          "app-1",
+		Name:        "Demo",
+		ComposeYAML: "services:\n  web:\n    image: nginx:alpine",
+		Dir:         filepath.Join(baseDir, "app-1"),
+		Status:      domain.AppStatusCreated,
+		CreatedAt:   time.Now().UTC(),
+		UpdatedAt:   time.Now().UTC(),
+	}
+	service := NewAppService(repo, &fakeDockerRepository{}, nil, baseDir)
+
+	_, err := service.UpdateApp(context.Background(), "app-1", "Demo", `services:
+  web:
+    image: nginx:alpine
+    ports:
+      - "443:80"`)
+	if !errors.Is(err, domain.ErrReservedIngressPort) {
+		t.Fatalf("expected ErrReservedIngressPort, got %v", err)
+	}
+}
+
 func TestService_ImportRepo_ComposeMode(t *testing.T) {
 	baseDir := t.TempDir()
 	repo := newFakeAppRepository()
@@ -652,6 +690,64 @@ func TestService_ImportRepo_DockerfileFallbackWithPort(t *testing.T) {
 	}
 	if !strings.Contains(app.ComposeYAML, "\"8080:8080\"") {
 		t.Fatalf("expected generated compose with required port mapping, got %q", app.ComposeYAML)
+	}
+}
+
+func TestService_ImportRepo_DockerfileFallbackRejectsReservedPort(t *testing.T) {
+	baseDir := t.TempDir()
+	repo := newFakeAppRepository()
+	gitRepo := &fakeGitRepository{
+		cloneFn: func(_ context.Context, _, _, destination string) (string, error) {
+			if err := os.WriteFile(filepath.Join(destination, "Dockerfile"), []byte("FROM nginx:alpine"), 0o644); err != nil {
+				t.Fatalf("failed create dockerfile: %v", err)
+			}
+			return "commit-ijk", nil
+		},
+	}
+
+	service := NewAppService(repo, &fakeDockerRepository{}, gitRepo, baseDir).
+		WithComposeValidator(func(context.Context, string) error { return nil })
+
+	_, err := service.ImportRepo(context.Background(), domain.ImportRepoInput{
+		Name:    "Static App",
+		RepoURL: "https://github.com/example/static.git",
+		AppPort: 80,
+	})
+	if !errors.Is(err, domain.ErrReservedIngressPort) {
+		t.Fatalf("expected ErrReservedIngressPort, got %v", err)
+	}
+}
+
+func TestService_ImportRepo_ComposeModeRejectsReservedPorts(t *testing.T) {
+	baseDir := t.TempDir()
+	repo := newFakeAppRepository()
+	gitRepo := &fakeGitRepository{
+		cloneFn: func(_ context.Context, sourceURL, _, destination string) (string, error) {
+			if sourceURL != "https://github.com/example/repo.git" {
+				t.Fatalf("unexpected repo URL %q", sourceURL)
+			}
+			if err := os.WriteFile(filepath.Join(destination, "compose.yml"), []byte(`services:
+  web:
+    image: nginx:alpine
+    ports:
+      - "443:443"`), 0o644); err != nil {
+				t.Fatalf("failed create compose file: %v", err)
+			}
+			return "commit-xyz", nil
+		},
+	}
+
+	service := NewAppService(repo, &fakeDockerRepository{}, gitRepo, baseDir).
+		WithImportTempPath(".tmp").
+		WithComposeValidator(func(context.Context, string) error { return nil })
+
+	_, err := service.ImportRepo(context.Background(), domain.ImportRepoInput{
+		Name:        "Imported App",
+		RepoURL:     "https://github.com/example/repo.git",
+		ComposePath: "compose.yml",
+	})
+	if !errors.Is(err, domain.ErrReservedIngressPort) {
+		t.Fatalf("expected ErrReservedIngressPort, got %v", err)
 	}
 }
 

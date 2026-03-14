@@ -485,6 +485,8 @@ func (h *DashboardHandler) writeAppError(w http.ResponseWriter, err error) {
 		h.writeErrorResponse(w, http.StatusBadRequest, "Compose YAML must contain a 'services:' key")
 	case errors.Is(err, domain.ErrInvalidComposeYAML):
 		h.writeErrorResponse(w, http.StatusBadRequest, "Compose YAML is invalid")
+	case errors.Is(err, domain.ErrReservedIngressPort):
+		h.writeErrorResponse(w, http.StatusBadRequest, err.Error())
 	default:
 		h.writeErrorResponse(w, http.StatusInternalServerError, "Internal Server Error")
 	}

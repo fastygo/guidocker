@@ -496,6 +496,26 @@ func TestDashboardHandler_APIApps_Create_NoServices_ReturnsBadRequest(t *testing
 	}
 }
 
+func TestDashboardHandler_APIApps_Create_ReservedIngressPort_ReturnsBadRequest(t *testing.T) {
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{
+		createFn: func(_ context.Context, name, composeYAML string) (*domain.App, error) {
+			return nil, domain.ErrReservedIngressPort
+		},
+	})
+
+	body := bytes.NewBufferString(`{"name":"demo","compose_yaml":"services:\n  web:\n    image: nginx:alpine\n    ports:\n      - \"80:80\""}`)
+	request := httptest.NewRequest(http.MethodPost, "/api/apps", body)
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	handler.APIApps(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, recorder.Result().StatusCode)
+	}
+}
+
 func TestDashboardHandler_APIAppDelete_Success(t *testing.T) {
 	var deletedID string
 	handler := newTestHandler(&fakeDashboardUseCase{})

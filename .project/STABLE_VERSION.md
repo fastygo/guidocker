@@ -18,58 +18,58 @@ Ship a fully usable stable release for simple stacks before the `Project` / `Ser
 
 ### 1. Stable App Lifecycle
 
-- [ ] Keep manual Compose and public Git repo import flows working
-- [ ] Keep create, deploy, stop, restart, logs, and delete stable for simple stacks
-- [ ] Preserve safe cleanup of the app stack directory and owned Docker resources
-- [ ] Keep Scanner as a read-only audit tool for unmanaged leftovers
+- [x] Keep manual Compose and public Git repo import flows working
+- [x] Keep create, deploy, stop, restart, logs, and delete stable for simple stacks
+- [x] Preserve safe cleanup of the app stack directory and owned Docker resources
+- [x] Keep Scanner as a read-only audit tool for unmanaged leftovers
 
 ### 2. Admin Panel Endpoint Settings
 
-- [ ] Add persistent settings for admin host IP, admin port, optional admin domain, and SSL mode
-- [ ] Keep the admin panel reachable by bare IP without requiring a domain
-- [ ] Keep the admin endpoint separate from application public routing
+- [x] Add persistent settings for admin host IP, admin port, optional admin domain, and SSL mode
+- [x] Keep the admin panel reachable by bare IP without requiring a domain
+- [x] Keep the admin endpoint separate from application public routing
 
 ### 3. App Public Access Settings
 
-- [ ] Add app settings for one primary public domain
-- [ ] Add app settings for the internal target port that `Nginx` should proxy to
+- [x] Add app settings for one primary public domain
+- [x] Add app settings for the internal target port that `Nginx` should proxy to
 - [ ] Keep `80` and `443` reserved for `Nginx` instead of direct app binding
-- [ ] Route domain traffic through platform-managed `Nginx` templates instead of manual per-app proxy editing
+- [x] Route domain traffic through platform-managed `Nginx` templates instead of manual per-app proxy editing
 
 ### 4. App Environment Settings
 
-- [ ] Add app settings for managed environment variables
-- [ ] Store environment data per app in a platform-owned format
-- [ ] Materialize managed environment variables into a generated `.env` file inside the app stack directory
-- [ ] Ensure manual Compose apps and imported repo apps can reuse the managed env file
+- [x] Add app settings for managed environment variables
+- [x] Store environment data per app in a platform-owned format
+- [x] Materialize managed environment variables into a generated `.env` file inside the app stack directory
+- [x] Ensure manual Compose apps and imported repo apps can reuse the managed env file
 
 ### 5. TLS and Certificates
 
-- [ ] Integrate `Certbot` with `Nginx` for certificate issuance
+- [x] Integrate `Certbot` with `Nginx` for certificate issuance
 - [ ] Support certificate renewal
 - [ ] Support single-domain TLS for apps and an optional admin domain
 - [ ] Keep wildcard certificates and automatic subdomain flows out of this release
 
 ### 6. Safety and Validation
 
-- [ ] Validate domain conflicts before applying routing changes
-- [ ] Validate target port conflicts and reserved admin port conflicts
-- [ ] Validate generated `Nginx` configuration before reload
-- [ ] Validate certificate issuance prerequisites before running `Certbot`
-- [ ] Fail early with clear operator-facing messages when routing or TLS cannot be applied
+- [x] Validate domain conflicts before applying routing changes
+- [x] Validate target port conflicts and reserved admin port conflicts
+- [x] Validate generated `Nginx` configuration before reload
+- [x] Validate certificate issuance prerequisites before running `Certbot`
+- [x] Fail early with clear operator-facing messages when routing or TLS cannot be applied
 
 ### 7. Safe Deletion Rules
 
-- [ ] Delete app containers, owned volumes, stack directory, and BoltDB record
-- [ ] Remove platform-generated `Nginx` config for the app on delete
-- [ ] Remove app-owned managed env files on delete
+- [x] Delete app containers, owned volumes, stack directory, and BoltDB record
+- [x] Remove platform-generated `Nginx` config for the app on delete
+- [x] Remove app-owned managed env files on delete
 - [ ] Remove app-owned certificates only when they are not shared
 - [ ] Leave external resources untouched and warn clearly when manual cleanup is required
 
 ### 8. Minimal Operational Visibility
 
-- [ ] Show public URL, proxy target port, SSL status, and env summary on the app detail page
-- [ ] Keep logs and runtime status visible in the current UI
+- [x] Show public URL, proxy target port, SSL status, and env summary on the app detail page
+- [x] Keep logs and runtime status visible in the current UI
 - [ ] Add a basic health or reachability status for proxied apps
 
 ## Nice-to-Have but Not Required for the First Stable Release
@@ -91,10 +91,10 @@ Ship a fully usable stable release for simple stacks before the `Project` / `Ser
 
 ## Release Acceptance Criteria
 
-- [ ] The admin panel can run on a bare IP and custom port
-- [ ] A simple app can be created from Compose YAML or imported from a public repo
-- [ ] An app can be configured with env values, one public domain, and one proxy target port
-- [ ] `Nginx` routes the domain to the configured app port
+- [x] The admin panel can run on a bare IP and custom port
+- [x] A simple app can be created from Compose YAML or imported from a public repo
+- [x] An app can be configured with env values, one public domain, and one proxy target port
+- [x] `Nginx` routes the domain to the configured app port
 - [ ] `Certbot` can issue and renew a certificate for the app domain
 - [ ] Delete removes the app stack and all platform-owned routing and env artifacts without touching external resources
 - [ ] The release is reliable enough to be considered the stable baseline before the `Project` / `Service` migration
