@@ -469,6 +469,50 @@ func TestService_DeployApp_ErrorMarksAppFailed(t *testing.T) {
 	}
 }
 
+func TestService_UpdateAppConfig(t *testing.T) {
+	repo := newFakeAppRepository()
+	repo.items["app-1"] = &domain.App{
+		ID:          "app-1",
+		Name:        "Demo",
+		ComposeYAML: "services:\n  web:\n    image: nginx:alpine",
+		Dir:         "/opt/stacks/app-1",
+		Status:      domain.AppStatusCreated,
+		ManagedEnv: map[string]string{
+			"KEEP_ME": "1",
+		},
+	}
+
+	service := NewAppService(repo, &fakeDockerRepository{}, nil, "/opt/stacks")
+	updated, err := service.UpdateAppConfig(context.Background(), "app-1", domain.AppConfig{
+		PublicDomain:    "app.example.com",
+		ProxyTargetPort: 8080,
+		UseTLS:          true,
+		ManagedEnv: map[string]string{
+			"API_URL": "https://app.example.com",
+			"":        "empty",
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpdateAppConfig() error = %v", err)
+	}
+
+	if updated.PublicDomain != "app.example.com" {
+		t.Fatalf("unexpected public domain %q", updated.PublicDomain)
+	}
+	if updated.ProxyTargetPort != 8080 {
+		t.Fatalf("unexpected proxy target port %d", updated.ProxyTargetPort)
+	}
+	if !updated.UseTLS {
+		t.Fatalf("expected tls enabled")
+	}
+	if updated.ManagedEnv["API_URL"] != "https://app.example.com" {
+		t.Fatalf("expected managed env api url, got %v", updated.ManagedEnv)
+	}
+	if _, hasEmpty := updated.ManagedEnv[""]; hasEmpty {
+		t.Fatal("expected empty managed env keys to be removed")
+	}
+}
+
 func TestService_StopApp(t *testing.T) {
 	repo := newFakeAppRepository()
 	repo.items["app-1"] = &domain.App{
@@ -507,6 +551,12 @@ func cloneApp(app *domain.App) *domain.App {
 	cloned := *app
 	if app.Ports != nil {
 		cloned.Ports = append([]string(nil), app.Ports...)
+	}
+	if app.ManagedEnv != nil {
+		cloned.ManagedEnv = map[string]string{}
+		for key, value := range app.ManagedEnv {
+			cloned.ManagedEnv[key] = value
+		}
 	}
 
 	return &cloned

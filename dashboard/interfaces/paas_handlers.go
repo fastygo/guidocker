@@ -16,6 +16,13 @@ type appPayload struct {
 	ComposeYAML string `json:"compose_yaml"`
 }
 
+type appConfigPayload struct {
+	PublicDomain    string            `json:"public_domain"`
+	ProxyTargetPort int               `json:"proxy_target_port"`
+	ManagedEnv      map[string]string `json:"managed_env"`
+	UseTLS          bool              `json:"use_tls"`
+}
+
 type importRepoPayload struct {
 	Name        string `json:"name"`
 	RepoURL     string `json:"repo_url"`
@@ -23,6 +30,13 @@ type importRepoPayload struct {
 	ComposePath string `json:"compose_path"`
 	AppPort     int    `json:"app_port"`
 	AutoDeploy  bool   `json:"auto_deploy"`
+}
+
+type platformSettingsPayload struct {
+	AdminHost     string `json:"admin_host"`
+	AdminPort     int    `json:"admin_port"`
+	AdminDomain   string `json:"admin_domain"`
+	AdminUseTLS   bool   `json:"admin_use_tls"`
 }
 
 func (h *DashboardHandler) Login(w http.ResponseWriter, r *http.Request) {
@@ -114,6 +128,43 @@ func (h *DashboardHandler) APIImport(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusCreated, app)
 }
 
+func (h *DashboardHandler) APISettings(w http.ResponseWriter, r *http.Request) {
+	if h.platformSettingsUseCase == nil {
+		h.writeErrorResponse(w, http.StatusNotImplemented, "Platform settings are not configured")
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		settings, err := h.platformSettingsUseCase.GetPlatformSettings(r.Context())
+		if err != nil {
+			h.writeErrorResponse(w, http.StatusInternalServerError, "Failed to load platform settings")
+			return
+		}
+		h.writeJSON(w, http.StatusOK, settings)
+	case http.MethodPut:
+		var payload platformSettingsPayload
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			h.writeErrorResponse(w, http.StatusBadRequest, "Invalid JSON")
+			return
+		}
+
+		updated, err := h.platformSettingsUseCase.UpdatePlatformSettings(r.Context(), domain.PlatformSettings{
+			AdminHost:   payload.AdminHost,
+			AdminPort:   payload.AdminPort,
+			AdminDomain: payload.AdminDomain,
+			AdminUseTLS: payload.AdminUseTLS,
+		})
+		if err != nil {
+			h.writeErrorResponse(w, http.StatusInternalServerError, "Failed to update platform settings")
+			return
+		}
+		h.writeJSON(w, http.StatusOK, updated)
+	default:
+		h.writeMethodNotAllowed(w)
+	}
+}
+
 func (h *DashboardHandler) APIAppRoutes(w http.ResponseWriter, r *http.Request) {
 	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/apps/"), "/")
 	if path == "" {
@@ -141,8 +192,64 @@ func (h *DashboardHandler) APIAppRoutes(w http.ResponseWriter, r *http.Request) 
 		h.APIRestart(w, r)
 	case "logs":
 		h.APILogs(w, r)
+	case "config":
+		h.APIAppConfig(w, r)
 	default:
 		http.NotFound(w, r)
+	}
+}
+
+func (h *DashboardHandler) APIAppConfig(w http.ResponseWriter, r *http.Request) {
+	if h.appUseCase == nil {
+		h.writeErrorResponse(w, http.StatusNotImplemented, "App management is not configured")
+		return
+	}
+
+	id := h.extractAppID(r)
+	if id == "" {
+		h.writeErrorResponse(w, http.StatusBadRequest, "App ID required")
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		app, err := h.appUseCase.GetApp(r.Context(), id)
+		if err != nil {
+			h.writeAppError(w, err)
+			return
+		}
+		h.writeJSON(w, http.StatusOK, domain.AppConfig{
+			PublicDomain:    app.PublicDomain,
+			ProxyTargetPort: app.ProxyTargetPort,
+			ManagedEnv:      app.ManagedEnv,
+			UseTLS:          app.UseTLS,
+		})
+	case http.MethodPut:
+		var payload appConfigPayload
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			h.writeErrorResponse(w, http.StatusBadRequest, "Invalid JSON")
+			return
+		}
+
+		updated, err := h.appUseCase.UpdateAppConfig(r.Context(), id, domain.AppConfig{
+			PublicDomain:    payload.PublicDomain,
+			ProxyTargetPort: payload.ProxyTargetPort,
+			ManagedEnv:      payload.ManagedEnv,
+			UseTLS:          payload.UseTLS,
+		})
+		if err != nil {
+			h.writeAppError(w, err)
+			return
+		}
+
+		h.writeJSON(w, http.StatusOK, domain.AppConfig{
+			PublicDomain:    updated.PublicDomain,
+			ProxyTargetPort: updated.ProxyTargetPort,
+			ManagedEnv:      updated.ManagedEnv,
+			UseTLS:          updated.UseTLS,
+		})
+	default:
+		h.writeMethodNotAllowed(w)
 	}
 }
 

@@ -31,6 +31,11 @@ type GitRepository interface {
 	Clone(ctx context.Context, sourceURL, branch, destination string) (string, error)
 }
 
+type PlatformSettingsRepository interface {
+	LoadPlatformSettings(ctx context.Context) (*PlatformSettings, error)
+	SavePlatformSettings(ctx context.Context, settings *PlatformSettings) error
+}
+
 type ContainerDetail struct {
 	ID         string
 	Name       string

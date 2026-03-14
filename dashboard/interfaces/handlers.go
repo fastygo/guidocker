@@ -16,6 +16,7 @@ type DashboardHandler struct {
 	dashboardUseCase domain.DashboardUseCase
 	appUseCase       domain.AppUseCase
 	scanUseCase      domain.ScannerUseCase
+	platformSettingsUseCase domain.PlatformSettingsUseCase
 	loginHandler     http.HandlerFunc
 	renderer         *views.Renderer
 }
@@ -197,6 +198,11 @@ func (h *DashboardHandler) SetAppUseCase(useCase domain.AppUseCase) {
 // SetScanUseCase attaches the scanner use case to the handler.
 func (h *DashboardHandler) SetScanUseCase(useCase domain.ScannerUseCase) {
 	h.scanUseCase = useCase
+}
+
+// SetPlatformSettingsUseCase attaches platform-level settings use case.
+func (h *DashboardHandler) SetPlatformSettingsUseCase(useCase domain.PlatformSettingsUseCase) {
+	h.platformSettingsUseCase = useCase
 }
 
 // SetLoginHandler attaches a dedicated login handler.

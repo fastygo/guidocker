@@ -2,17 +2,87 @@
 <section class="space-y-4">
 	<div>
 		<div class="text-2xl font-semibold">Settings</div>
-		<div class="text-sm text-muted-foreground">Placeholders for core PAAS settings modules.</div>
+		<div class="text-sm text-muted-foreground">Manage platform endpoint settings used by the admin API and external access.</div>
 	</div>
 	<div class="grid gap-3 md:grid-cols-2">
 		<div class="rounded border border-border bg-card p-4">
-			<div class="font-semibold">Display</div>
-			<p class="text-sm text-muted-foreground">Dark mode is controlled by the button in the header.</p>
+			<div class="font-semibold">Admin panel endpoint</div>
+			<div class="space-y-3">
+				<label class="block text-sm text-muted-foreground">Admin host
+					<input id="admin-host" class="mt-1 w-full rounded border border-border bg-background px-2 py-2 text-sm" placeholder="0.0.0.0" />
+				</label>
+				<label class="block text-sm text-muted-foreground">Admin port
+					<input id="admin-port" type="number" min="1" max="65535" class="mt-1 w-full rounded border border-border bg-background px-2 py-2 text-sm" placeholder="3000" />
+				</label>
+				<label class="block text-sm text-muted-foreground">Admin domain (optional)
+					<input id="admin-domain" class="mt-1 w-full rounded border border-border bg-background px-2 py-2 text-sm" placeholder="dashboard.example.com" />
+				</label>
+				<label class="flex items-center gap-2 text-sm">
+					<input id="admin-use-tls" type="checkbox" />
+					<span>Enable HTTPS for admin endpoint</span>
+				</label>
+				<button type="button" class="px-3 py-2 rounded border border-border text-sm" onclick="saveAdminSettings()">Save admin settings</button>
+				<div id="admin-settings-feedback" class="text-sm text-muted-foreground"></div>
+			</div>
 		</div>
 		<div class="rounded border border-border bg-card p-4">
-			<div class="font-semibold">Security</div>
-			<p class="text-sm text-muted-foreground">Token access and audit controls are next sprint.</p>
+			<div class="font-semibold">Notes</div>
+			<ul class="space-y-2 text-sm text-muted-foreground list-disc list-inside">
+				<li>Platform exposes this config through <code>/api/settings</code>.</li>
+				<li>When domain is not set, the panel is reachable via host IP.</li>
+				<li>TLS settings are applied when the stack config is attached to a proxy.</li>
+			</ul>
 		</div>
 	</div>
 </section>
+<script>
+	async function loadAdminSettings() {
+		const response = await fetch('/api/settings', { method: 'GET' });
+		const payload = await response.json().catch(() => ({}));
+		if (!response.ok) {
+			console.warn('Failed to load platform settings', payload);
+			return;
+		}
+
+		const hostNode = document.getElementById('admin-host');
+		const portNode = document.getElementById('admin-port');
+		const domainNode = document.getElementById('admin-domain');
+		const tlsNode = document.getElementById('admin-use-tls');
+		if (hostNode) hostNode.value = payload.admin_host || '';
+		if (portNode) portNode.value = payload.admin_port ? String(payload.admin_port) : '';
+		if (domainNode) domainNode.value = payload.admin_domain || '';
+		if (tlsNode) tlsNode.checked = !!payload.admin_use_tls;
+	}
+
+	async function saveAdminSettings() {
+		const feedback = document.getElementById('admin-settings-feedback');
+		if (feedback) feedback.textContent = 'Saving settings...';
+
+		const hostNode = document.getElementById('admin-host');
+		const portNode = document.getElementById('admin-port');
+		const domainNode = document.getElementById('admin-domain');
+		const tlsNode = document.getElementById('admin-use-tls');
+		const payload = {
+			admin_host: hostNode ? hostNode.value.trim() : '',
+			admin_port: portNode ? Number.parseInt(portNode.value, 10) || 0 : 0,
+			admin_domain: domainNode ? domainNode.value.trim() : '',
+			admin_use_tls: tlsNode ? !!tlsNode.checked : false,
+		};
+
+		const response = await fetch('/api/settings', {
+			method: 'PUT',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(payload),
+		});
+		const body = await response.json().catch(() => ({}));
+		if (!response.ok) {
+			if (feedback) feedback.textContent = body.error || 'Failed to save settings';
+			return;
+		}
+		if (feedback) feedback.textContent = 'Settings saved';
+		await loadAdminSettings();
+	}
+
+	document.addEventListener('DOMContentLoaded', loadAdminSettings);
+</script>
 {{end}}

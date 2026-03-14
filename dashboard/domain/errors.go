@@ -7,6 +7,7 @@ var (
 	ErrInvalidContainerStatus  = errors.New("invalid container status")
 	ErrMissingRepository       = errors.New("missing dashboard repository")
 	ErrAppNotFound             = errors.New("app not found")
+	ErrMissingPlatformSettingsRepository = errors.New("missing platform settings repository")
 	ErrInvalidAppName          = errors.New("invalid app name")
 	ErrComposeNoServices       = errors.New("compose yaml must contain a 'services:' key")
 	ErrInvalidComposeYAML      = errors.New("invalid compose yaml")

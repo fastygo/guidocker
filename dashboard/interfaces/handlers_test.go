@@ -37,6 +37,7 @@ type fakeDashboardUseCase struct {
 type fakeAppUseCase struct {
 	createFn    func(context.Context, string, string) (*domain.App, error)
 	updateFn    func(context.Context, string, string, string) (*domain.App, error)
+	updateConfigFn func(context.Context, string, domain.AppConfig) (*domain.App, error)
 	importFn    func(context.Context, domain.ImportRepoInput) (*domain.App, error)
 	deleteFn    func(context.Context, string) error
 	getFn       func(context.Context, string) (*domain.App, error)
@@ -87,6 +88,13 @@ func (m *fakeAppUseCase) CreateApp(ctx context.Context, name, composeYAML string
 func (m *fakeAppUseCase) UpdateApp(ctx context.Context, id, name, composeYAML string) (*domain.App, error) {
 	if m.updateFn != nil {
 		return m.updateFn(ctx, id, name, composeYAML)
+	}
+	return nil, nil
+}
+
+func (m *fakeAppUseCase) UpdateAppConfig(ctx context.Context, id string, config domain.AppConfig) (*domain.App, error) {
+	if m.updateConfigFn != nil {
+		return m.updateConfigFn(ctx, id, config)
 	}
 	return nil, nil
 }

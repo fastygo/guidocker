@@ -11,6 +11,7 @@ import (
 	"dashboard/interfaces"
 	"dashboard/interfaces/middleware"
 	appusecase "dashboard/usecase/app"
+	settingsusecase "dashboard/usecase/settings"
 	scanusecase "dashboard/usecase/scanner"
 	"dashboard/views"
 	"fmt"
@@ -57,6 +58,7 @@ func buildServer(cfg *config.Config, useCase domain.DashboardUseCase, appUseCase
 	handler := interfaces.NewDashboardHandler(useCase, renderer)
 	handler.SetAppUseCase(appUseCase)
 	handler.SetScanUseCase(scanUseCase)
+	handler.SetPlatformSettingsUseCase(platformSettingsService)
 	handler.SetLoginHandler(auth.LoginHandler())
 
 	interfaces.RegisterRoutes(mux, handler)
@@ -91,6 +93,23 @@ func main() {
 
 	dockerRepository := dockerrepo.NewDockerRepository(cfg.Stacks.Dir)
 	gitRepository := gitrepo.NewGitRepository()
+	platformSettingsRepository, err := boltrepo.NewPlatformSettingsRepository(cfg.Stacks.DBFile)
+	if err != nil {
+		log.Fatalf("❌ Failed to initialize platform settings repository: %v", err)
+	}
+	defer func() {
+		if closeErr := platformSettingsRepository.Close(); closeErr != nil {
+			log.Printf("⚠️  Failed to close platform settings repository: %v", closeErr)
+		}
+	}()
+
+	platformSettingsService := settingsusecase.NewPlatformSettingsService(platformSettingsRepository, domain.DefaultPlatformSettings())
+	if platformSettings, err := platformSettingsService.GetPlatformSettings(context.Background()); err != nil {
+		log.Printf("⚠️  Failed to load platform settings: %v", err)
+	} else {
+		log.Printf("🧭 Platform settings loaded: host=%q port=%d domain=%q tls=%v", platformSettings.AdminHost, platformSettings.AdminPort, platformSettings.AdminDomain, platformSettings.AdminUseTLS)
+	}
+
 	appService := appusecase.NewAppService(appRepo, dockerRepository, gitRepository, cfg.Stacks.Dir).
 		WithImportTimeout(cfg.Import.Timeout).
 		WithImportTempPath(cfg.Import.TempPath)

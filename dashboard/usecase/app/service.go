@@ -147,6 +147,31 @@ func (s *Service) UpdateApp(ctx context.Context, id, name, composeYAML string) (
 	return app, nil
 }
 
+func (s *Service) UpdateAppConfig(ctx context.Context, id string, config domain.AppConfig) (*domain.App, error) {
+	if s.repository == nil {
+		return nil, domain.ErrMissingAppRepository
+	}
+
+	app, err := s.repository.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	app.PublicDomain = strings.TrimSpace(config.PublicDomain)
+	app.ProxyTargetPort = config.ProxyTargetPort
+	app.UseTLS = config.UseTLS
+	if config.ManagedEnv != nil {
+		app.ManagedEnv = cloneManagedEnv(config.ManagedEnv)
+	}
+	app.UpdatedAt = time.Now().UTC()
+
+	if err := s.repository.Update(ctx, app); err != nil {
+		return nil, err
+	}
+
+	return app, nil
+}
+
 func (s *Service) DeleteApp(ctx context.Context, id string) error {
 	if s.repository == nil {
 		return domain.ErrMissingAppRepository
@@ -671,4 +696,20 @@ func normalizeLogLines(lines int) int {
 		return 1000
 	}
 	return lines
+}
+
+func cloneManagedEnv(env map[string]string) map[string]string {
+	if len(env) == 0 {
+		return nil
+	}
+
+	cloned := make(map[string]string, len(env))
+	for key, value := range env {
+		if strings.TrimSpace(key) == "" {
+			continue
+		}
+		cloned[strings.TrimSpace(key)] = strings.TrimSpace(value)
+	}
+
+	return cloned
 }
