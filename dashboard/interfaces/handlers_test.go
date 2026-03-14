@@ -37,6 +37,7 @@ type fakeDashboardUseCase struct {
 type fakeAppUseCase struct {
 	createFn    func(context.Context, string, string) (*domain.App, error)
 	updateFn    func(context.Context, string, string, string) (*domain.App, error)
+	importFn    func(context.Context, domain.ImportRepoInput) (*domain.App, error)
 	deleteFn    func(context.Context, string) error
 	getFn       func(context.Context, string) (*domain.App, error)
 	listFn      func(context.Context) ([]*domain.App, error)
@@ -44,7 +45,7 @@ type fakeAppUseCase struct {
 	stopFn      func(context.Context, string) error
 	restartFn   func(context.Context, string) error
 	getStatusFn func(context.Context, string) (string, error)
-	getLogsFn   func(context.Context, string, int) (string, error)
+	getLogsFn   func(context.Context, *domain.App, int) (string, error)
 }
 
 func (m *fakeDashboardUseCase) GetDashboardData(ctx context.Context) (*domain.DashboardData, error) {
@@ -86,6 +87,13 @@ func (m *fakeAppUseCase) CreateApp(ctx context.Context, name, composeYAML string
 func (m *fakeAppUseCase) UpdateApp(ctx context.Context, id, name, composeYAML string) (*domain.App, error) {
 	if m.updateFn != nil {
 		return m.updateFn(ctx, id, name, composeYAML)
+	}
+	return nil, nil
+}
+
+func (m *fakeAppUseCase) ImportRepo(ctx context.Context, input domain.ImportRepoInput) (*domain.App, error) {
+	if m.importFn != nil {
+		return m.importFn(ctx, input)
 	}
 	return nil, nil
 }
@@ -139,9 +147,9 @@ func (m *fakeAppUseCase) GetAppStatus(ctx context.Context, id string) (string, e
 	return domain.AppStatusRunning, nil
 }
 
-func (m *fakeAppUseCase) GetAppLogs(ctx context.Context, id string, lines int) (string, error) {
+func (m *fakeAppUseCase) GetAppLogs(ctx context.Context, app *domain.App, lines int) (string, error) {
 	if m.getLogsFn != nil {
-		return m.getLogsFn(ctx, id, lines)
+		return m.getLogsFn(ctx, app, lines)
 	}
 	return "", nil
 }
@@ -491,6 +499,78 @@ func TestDashboardHandler_APIAppDelete_Success(t *testing.T) {
 	}
 	if deletedID != "app-1" {
 		t.Fatalf("expected deleted app app-1, got %q", deletedID)
+	}
+}
+
+func TestDashboardHandler_APIImport_Create(t *testing.T) {
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{
+		importFn: func(_ context.Context, input domain.ImportRepoInput) (*domain.App, error) {
+			if input.Name != "demo" {
+				t.Fatalf("expected name demo, got %q", input.Name)
+			}
+			if input.RepoURL != "https://github.com/example/demo.git" {
+				t.Fatalf("unexpected repo url: %q", input.RepoURL)
+			}
+			if input.Branch != "main" {
+				t.Fatalf("unexpected branch: %q", input.Branch)
+			}
+			if input.ComposePath != "docker-compose.yml" {
+				t.Fatalf("expected compose_path docker-compose.yml, got %q", input.ComposePath)
+			}
+			return &domain.App{
+				ID:         "app-1",
+				Name:       input.Name,
+				ComposeYAML: "services:\n  web:\n    image: nginx:alpine",
+				Status:     domain.AppStatusCreated,
+			}, nil
+		},
+	})
+
+	body := bytes.NewBufferString(`{
+		"name":"demo",
+		"repo_url":"https://github.com/example/demo.git",
+		"branch":"main",
+		"compose_path":"docker-compose.yml"
+	}`)
+	request := httptest.NewRequest(http.MethodPost, "/api/apps/import", body)
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	handler.APIImport(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", recorder.Result().StatusCode)
+	}
+	var payload domain.App
+	if err := json.NewDecoder(recorder.Body).Decode(&payload); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if payload.ID != "app-1" {
+		t.Fatalf("expected app id app-1, got %q", payload.ID)
+	}
+}
+
+func TestDashboardHandler_APIImport_ErrorFromUseCase(t *testing.T) {
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{
+		importFn: func(_ context.Context, _ domain.ImportRepoInput) (*domain.App, error) {
+			return nil, domain.ErrMissingDockerfile
+		},
+	})
+
+	body := bytes.NewBufferString(`{
+		"name":"demo",
+		"repo_url":"https://github.com/example/demo.git"
+	}`)
+	request := httptest.NewRequest(http.MethodPost, "/api/apps/import", body)
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	handler.APIImport(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", recorder.Result().StatusCode)
 	}
 }
 

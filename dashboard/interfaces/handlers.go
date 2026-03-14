@@ -129,6 +129,11 @@ func composePaasToView(app *domain.App) views.ComposeView {
 	name := ""
 	appID := ""
 	composeYAML := defaultComposeYAML()
+	sourceType := string(domain.SourceTypeManual)
+	repoURL := ""
+	repoBranch := ""
+	composePath := ""
+	appPort := 0
 
 	if app != nil {
 		title = "Edit application"
@@ -137,6 +142,11 @@ func composePaasToView(app *domain.App) views.ComposeView {
 		name = app.Name
 		appID = app.ID
 		composeYAML = app.ComposeYAML
+		sourceType = string(app.SourceType)
+		repoURL = app.RepoURL
+		repoBranch = app.RepoBranch
+		composePath = app.ComposePath
+		appPort = app.AppPort
 	}
 
 	appIDJS := template.JS("null")
@@ -155,6 +165,11 @@ func composePaasToView(app *domain.App) views.ComposeView {
 		Subtitle:    subtitle,
 		Name:        name,
 		ComposeYAML: composeYAML,
+		SourceType:  sourceType,
+		RepoURL:     repoURL,
+		RepoBranch:  repoBranch,
+		ComposePath: composePath,
+		AppPort:     appPort,
 		ActionLabel: actionLabel,
 		AppID:       appID,
 		AppIDJS:     appIDJS,

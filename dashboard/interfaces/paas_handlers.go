@@ -16,6 +16,15 @@ type appPayload struct {
 	ComposeYAML string `json:"compose_yaml"`
 }
 
+type importRepoPayload struct {
+	Name        string `json:"name"`
+	RepoURL     string `json:"repo_url"`
+	Branch      string `json:"branch"`
+	ComposePath string `json:"compose_path"`
+	AppPort     int    `json:"app_port"`
+	AutoDeploy  bool   `json:"auto_deploy"`
+}
+
 func (h *DashboardHandler) Login(w http.ResponseWriter, r *http.Request) {
 	if h.loginHandler != nil {
 		h.loginHandler(w, r)
@@ -69,6 +78,40 @@ func (h *DashboardHandler) APIApps(w http.ResponseWriter, r *http.Request) {
 	default:
 		h.writeMethodNotAllowed(w)
 	}
+}
+
+func (h *DashboardHandler) APIImport(w http.ResponseWriter, r *http.Request) {
+	if h.appUseCase == nil {
+		h.writeErrorResponse(w, http.StatusNotImplemented, "App management is not configured")
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		h.writeMethodNotAllowed(w)
+		return
+	}
+
+	var payload importRepoPayload
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		h.writeErrorResponse(w, http.StatusBadRequest, "Invalid JSON")
+		return
+	}
+
+	input := domain.ImportRepoInput{
+		Name:        payload.Name,
+		RepoURL:     payload.RepoURL,
+		Branch:      payload.Branch,
+		ComposePath: payload.ComposePath,
+		AppPort:     payload.AppPort,
+		AutoDeploy:  payload.AutoDeploy,
+	}
+	app, err := h.appUseCase.ImportRepo(r.Context(), input)
+	if err != nil {
+		h.writeAppError(w, err)
+		return
+	}
+
+	h.writeJSON(w, http.StatusCreated, app)
 }
 
 func (h *DashboardHandler) APIAppRoutes(w http.ResponseWriter, r *http.Request) {
@@ -190,7 +233,13 @@ func (h *DashboardHandler) APILogs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	logsText, err := h.appUseCase.GetAppLogs(r.Context(), id, lines)
+	app, err := h.appUseCase.GetApp(r.Context(), id)
+	if err != nil {
+		h.writeAppError(w, err)
+		return
+	}
+
+	logsText, err := h.appUseCase.GetAppLogs(r.Context(), app, lines)
 	if err != nil {
 		h.writeAppError(w, err)
 		return
@@ -298,6 +347,17 @@ func (h *DashboardHandler) writeAppError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, domain.ErrAppNotFound):
 		h.writeErrorResponse(w, http.StatusNotFound, "App not found")
+	case errors.Is(err, domain.ErrInvalidRepoURL),
+		errors.Is(err, domain.ErrUnsupportedRepoURL),
+		errors.Is(err, domain.ErrRepoBranchNotFound),
+		errors.Is(err, domain.ErrInvalidComposePath),
+		errors.Is(err, domain.ErrMissingComposeFile),
+		errors.Is(err, domain.ErrMissingDockerfile),
+		errors.Is(err, domain.ErrInvalidAppPort),
+		errors.Is(err, domain.ErrComposeConfigValidation):
+		h.writeErrorResponse(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, domain.ErrMissingGitRepository):
+		h.writeErrorResponse(w, http.StatusInternalServerError, "Git repository adapter is not configured")
 	case errors.Is(err, domain.ErrInvalidAppName):
 		h.writeErrorResponse(w, http.StatusBadRequest, "App name is required")
 	case errors.Is(err, domain.ErrComposeNoServices):

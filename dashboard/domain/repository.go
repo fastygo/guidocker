@@ -21,10 +21,14 @@ type DockerRepository interface {
 	Restart(ctx context.Context, app *App) error
 	Destroy(ctx context.Context, app *App) error
 	GetStatus(ctx context.Context, app *App) (string, error)
-	GetLogs(ctx context.Context, appID string, lines int) (string, error)
+	GetLogs(ctx context.Context, app *App, lines int) (string, error)
 	ListRunning(ctx context.Context) ([]Container, error)
 	ListAllContainers(ctx context.Context) ([]Container, error)
 	InspectContainers(ctx context.Context, ids []string) ([]ContainerDetail, error)
+}
+
+type GitRepository interface {
+	Clone(ctx context.Context, sourceURL, branch, destination string) (string, error)
 }
 
 type ContainerDetail struct {

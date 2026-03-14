@@ -24,7 +24,17 @@ type AppUseCase interface {
 	StopApp(ctx context.Context, id string) error
 	RestartApp(ctx context.Context, id string) error
 	GetAppStatus(ctx context.Context, id string) (string, error)
-	GetAppLogs(ctx context.Context, id string, lines int) (string, error)
+	GetAppLogs(ctx context.Context, app *App, lines int) (string, error)
+	ImportRepo(ctx context.Context, input ImportRepoInput) (*App, error)
+}
+
+type ImportRepoInput struct {
+	Name        string `json:"name"`
+	RepoURL     string `json:"repo_url"`
+	Branch      string `json:"branch"`
+	ComposePath string `json:"compose_path"`
+	AppPort     int    `json:"app_port"`
+	AutoDeploy  bool   `json:"auto_deploy"`
 }
 
 // ScannerUseCase defines scanner/business logic for auditing Docker resources.

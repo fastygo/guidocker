@@ -5,6 +5,14 @@ import (
 	"time"
 )
 
+type SourceType string
+
+const (
+	SourceTypeManual         SourceType = "manual"
+	SourceTypeRepoCompose    SourceType = "repo_compose"
+	SourceTypeRepoDockerfile SourceType = "repo_dockerfile"
+)
+
 const (
 	AppStatusCreated   = "created"
 	AppStatusDeploying = "deploying"
@@ -18,6 +26,12 @@ type App struct {
 	ID          string    `json:"id"`
 	Name        string    `json:"name"`
 	ComposeYAML string    `json:"compose_yaml"`
+	SourceType  SourceType `json:"source_type"`
+	RepoURL     string    `json:"repo_url"`
+	RepoBranch  string    `json:"repo_branch"`
+	ComposePath string    `json:"compose_path"`
+	ResolvedCommit string `json:"resolved_commit"`
+	AppPort     int       `json:"app_port"`
 	Dir         string    `json:"dir"`
 	Status      string    `json:"status"`
 	Ports       []string  `json:"ports"`

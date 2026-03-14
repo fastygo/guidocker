@@ -29,7 +29,7 @@ func (r *Repository) Deploy(ctx context.Context, app *domain.App) error {
 		return domain.ErrAppNotFound
 	}
 
-	composeFile := r.composeFile(app.ID, app.Dir)
+	composeFile := r.composeFile(app)
 	if err := os.MkdirAll(filepath.Dir(composeFile), 0o755); err != nil {
 		return fmt.Errorf("create app directory: %w", err)
 	}
@@ -50,7 +50,7 @@ func (r *Repository) Stop(ctx context.Context, app *domain.App) error {
 		return domain.ErrAppNotFound
 	}
 
-	composeFile := r.composeFile(app.ID, app.Dir)
+	composeFile := r.composeFile(app)
 	_, err := r.run(ctx, "docker", "compose", "-f", composeFile, "down")
 	if err != nil {
 		return fmt.Errorf("stop app %s: %w", app.ID, err)
@@ -64,7 +64,7 @@ func (r *Repository) Destroy(ctx context.Context, app *domain.App) error {
 		return domain.ErrAppNotFound
 	}
 
-	composeFile := r.composeFile(app.ID, app.Dir)
+	composeFile := r.composeFile(app)
 	args := []string{
 		"compose",
 		"-p", app.ID,
@@ -90,7 +90,7 @@ func (r *Repository) Restart(ctx context.Context, app *domain.App) error {
 		return domain.ErrAppNotFound
 	}
 
-	composeFile := r.composeFile(app.ID, app.Dir)
+	composeFile := r.composeFile(app)
 	_, err := r.run(ctx, "docker", "compose", "-f", composeFile, "restart")
 	if err != nil {
 		return fmt.Errorf("restart app %s: %w", app.ID, err)
@@ -104,7 +104,7 @@ func (r *Repository) GetStatus(ctx context.Context, app *domain.App) (string, er
 		return "", domain.ErrAppNotFound
 	}
 
-	composeFile := r.composeFile(app.ID, app.Dir)
+	composeFile := r.composeFile(app)
 	if _, err := os.Stat(composeFile); err != nil {
 		if os.IsNotExist(err) {
 			return domain.AppStatusStopped, nil
@@ -120,11 +120,15 @@ func (r *Repository) GetStatus(ctx context.Context, app *domain.App) (string, er
 	return parseComposeStatus(output), nil
 }
 
-func (r *Repository) GetLogs(ctx context.Context, appID string, lines int) (string, error) {
-	composeFile := r.composeFile(appID, "")
+func (r *Repository) GetLogs(ctx context.Context, app *domain.App, lines int) (string, error) {
+	if app == nil {
+		return "", domain.ErrAppNotFound
+	}
+
+	composeFile := r.composeFile(app)
 	output, err := r.run(ctx, "docker", "compose", "-f", composeFile, "logs", "--tail", strconv.Itoa(lines), "--no-color")
 	if err != nil {
-		return "", fmt.Errorf("get logs for app %s: %w", appID, err)
+		return "", fmt.Errorf("get logs for app %s: %w", app.ID, err)
 	}
 
 	return string(output), nil
@@ -208,9 +212,18 @@ func (r *Repository) InspectContainers(ctx context.Context, ids []string) ([]dom
 	return details, nil
 }
 
-func (r *Repository) composeFile(appID, appDir string) string {
-	if strings.TrimSpace(appDir) == "" {
+func (r *Repository) composeFile(app *domain.App) string {
+	if app == nil {
+		return filepath.Join(r.stacksDir, "unknown", "docker-compose.yml")
+	}
+
+	appID := strings.TrimSpace(app.ID)
+	appDir := strings.TrimSpace(app.Dir)
+	if appDir == "" {
 		appDir = filepath.Join(r.stacksDir, appID)
+	}
+	if composePath := strings.TrimSpace(app.ComposePath); composePath != "" {
+		return filepath.Join(appDir, filepath.Clean(composePath))
 	}
 
 	return filepath.Join(appDir, "docker-compose.yml")

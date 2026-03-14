@@ -407,7 +407,7 @@ type fakeScannerDockerRepository struct {
 	restartFn  func(context.Context, *domain.App) error
 	destroyFn  func(context.Context, *domain.App) error
 	getStatusFn func(context.Context, *domain.App) (string, error)
-	getLogsFn   func(context.Context, string, int) (string, error)
+	getLogsFn   func(context.Context, *domain.App, int) (string, error)
 }
 
 func (r *fakeScannerDockerRepository) Deploy(ctx context.Context, app *domain.App) error {
@@ -445,9 +445,9 @@ func (r *fakeScannerDockerRepository) GetStatus(ctx context.Context, app *domain
 	return domain.AppStatusRunning, nil
 }
 
-func (r *fakeScannerDockerRepository) GetLogs(ctx context.Context, appID string, lines int) (string, error) {
+func (r *fakeScannerDockerRepository) GetLogs(ctx context.Context, app *domain.App, lines int) (string, error) {
 	if r.getLogsFn != nil {
-		return r.getLogsFn(ctx, appID, lines)
+		return r.getLogsFn(ctx, app, lines)
 	}
 	return "", nil
 }

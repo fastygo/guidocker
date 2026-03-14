@@ -2,35 +2,66 @@
 
 ## Done
 
-- [x] App deletion (DELETE /api/apps/{id})
-- [x] Safe self-removal scenario for the admin (maintenance mode for clean shutdown before removal)
-- [x] Deploy and remove GUI while keeping the app running
-- [x] Place GUI on top of existing manual apps and auto-discover them (Scanner)
+- [x] App deletion via `DELETE /api/apps/{id}`
+- [x] Safe self-removal flow for the admin panel
+- [x] Keep deployed apps running after removing the GUI
+- [x] Read-only Scanner for discovered manual Docker resources
+- [x] Public Git repo import with Compose-first flow and Dockerfile fallback
 
-## Planned
+## Product Principles
 
-### Repo import (Create App from Git)
+- Single-user standalone admin panel with root privileges
+- One `Project` is one deployable Docker Compose stack
+- `Services` are child resources inside a `Project`
+- Deploy, stop, restart, and delete stay at the `Project` level
+- Scanner stays read-only for unmanaged resources and outputs manual cleanup commands
+- CRON is not part of the admin panel core and should run as a separate managed project when needed
 
-- [ ] Add `import_repo` mode alongside direct YAML input
-- [ ] UI: tab/toggle in compose form — Repo URL, Branch (optional), Compose file path, Deploy now checkbox
-- [ ] API: `POST /api/apps/import` with payload `{ name, repo_url, branch?, compose_path?, auto_deploy }`
-- [ ] Service: clone repo to `STACKS_DIR/<app-id>`, read compose (or generate for static sites), save to BoltDB, optionally deploy
-- [ ] Security: allow only `https://`, limit `git clone` timeout, handle private repos via secure backend param, clean temp dirs on error
+## Priority Roadmap
 
-### PaaS production epic (next phase)
+### Phase 1. Project Model and Safe Lifecycle
 
-- [ ] Full PaaS layer: apps lifecycle, SSL, nginx, CRON/cleanup, hardening
-- [ ] Meet all production PaaS GUI requirements from the guide
+- [ ] Introduce `Project` as the main managed resource for complex stacks
+- [ ] Treat containers, databases, Redis, workers, gateways, and sidecars as `Services` inside a project
+- [ ] Keep lifecycle operations at the project level: deploy, stop, restart, delete, cleanup
+- [ ] Add a project details view with a read-only services list
+- [ ] Show per-service status, logs, image, ports, and health inside the project view
+- [ ] Add a deletion preview for project-owned containers, networks, volumes, and stack directories
+- [ ] Define strict cleanup rules for project-owned resources versus external resources
 
-## Known limitations (MVP scope)
+### Phase 2. Safe Networking and Public Exposure
 
-- No automatic nginx config generation per app
-- No wildcard SSL / Let's Encrypt
+- [ ] Add a reverse proxy layer for public traffic
+- [ ] Stop binding all applications directly to host port `80`
+- [ ] Assign internal ports per project and expose only approved entry points
+- [ ] Add settings for admin panel URL, homepage URL, host IP, public port, and SSL mode
+- [ ] When a public URL is configured, block or redirect direct IP access
+- [ ] Keep proxy management controlled by the platform model instead of free-form per-app Nginx editing
+- [ ] Add fixed domain and certificate support for production use
+
+### Phase 3. Production Readiness for Big Stacks
+
+- [ ] Add preflight validation before import or deploy
+- [ ] Validate port conflicts, missing files, invalid compose settings, and required env files
+- [ ] Detect external volumes, external networks, and bind mounts outside the stack directory
+- [ ] Add aggregated project health and per-service readiness checks
+- [ ] Add secrets and `.env` management per project
+- [ ] Add backup and restore flows for stateful services such as PostgreSQL and Redis
+- [ ] Add update and rollback flow based on stored source metadata and resolved commit
+- [ ] Add migration and dependency hooks for complex stacks such as `n8n` and `Supabase`
+- [ ] Add log retention and export policy for production troubleshooting
+- [ ] Add runtime guardrails for dangerous compose options and unsafe exposure patterns
+
+### Phase 4. UX and Operational Polish
+
+- [ ] Make Scanner output project-aware for orphan runtime resources, orphan directories, and stale admin instances
+- [ ] Add clearer warnings and cleanup guidance in the UI
+- [ ] Add project-level operational summaries for ports, storage, logs, and exposure
+- [ ] Meet the production PaaS GUI requirements from the guide
+
+## Constraints and Out of Scope
+
 - No multi-user / RBAC
-- No background sync of container state with stored apps
-
-## Notes
-
-**Port 80:** Multiple apps cannot all bind to 80. Use a reverse proxy (Nginx/Caddy) and assign internal ports per app.
-
-**Current Create App flow:** Accepts only `name` and `compose_yaml`; repo URL is not supported yet (see Repo import above).
+- No background sync that continuously mutates stored app state from runtime state
+- No wildcard SSL / Let's Encrypt in the initial production phase
+- No built-in CRON subsystem in the admin panel core

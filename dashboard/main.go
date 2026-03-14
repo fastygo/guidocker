@@ -7,6 +7,7 @@ import (
 	"dashboard/infrastructure"
 	boltrepo "dashboard/infrastructure/bolt"
 	dockerrepo "dashboard/infrastructure/docker"
+	gitrepo "dashboard/infrastructure/git"
 	"dashboard/interfaces"
 	"dashboard/interfaces/middleware"
 	appusecase "dashboard/usecase/app"
@@ -89,7 +90,10 @@ func main() {
 	}()
 
 	dockerRepository := dockerrepo.NewDockerRepository(cfg.Stacks.Dir)
-	appService := appusecase.NewAppService(appRepo, dockerRepository, cfg.Stacks.Dir)
+	gitRepository := gitrepo.NewGitRepository()
+	appService := appusecase.NewAppService(appRepo, dockerRepository, gitRepository, cfg.Stacks.Dir).
+		WithImportTimeout(cfg.Import.Timeout).
+		WithImportTempPath(cfg.Import.TempPath)
 	auth := middleware.NewSessionAuth(cfg.Auth.AdminUser, cfg.Auth.AdminPass)
 	freePort, err := resolvePort(cfg.Server.Port)
 	if err != nil {

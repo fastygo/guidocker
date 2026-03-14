@@ -70,6 +70,11 @@ type ComposeView struct {
 	Subtitle    string
 	Name        string
 	ComposeYAML string
+	SourceType  string
+	RepoURL     string
+	RepoBranch  string
+	ComposePath string
+	AppPort     int
 	ActionLabel string
 	AppID       string
 	AppIDJS     template.JS

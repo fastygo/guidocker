@@ -6,16 +6,47 @@
 	</div>
 	<div class="grid gap-3 lg:grid-cols-[2fr_1fr]">
 		<div class="rounded border border-border bg-card p-4 space-y-3">
+			<div class="flex gap-2">
+				<button id="tab-compose" type="button" class="rounded border px-3 py-1.5 text-sm" onclick="setMode('compose')">Compose YAML</button>
+				<button id="tab-repo" type="button" class="rounded border px-3 py-1.5 text-sm" onclick="setMode('repo')">Import from Git repo</button>
+			</div>
+
 			<div class="font-semibold">Compose pack</div>
 			<form id="compose-form" class="space-y-3">
 				<div>
 					<label class="text-sm text-muted-foreground">App name</label>
 					<input id="app-name" class="mt-1 w-full rounded border border-border bg-background px-2 py-2 text-sm" value="{{.Name}}" />
 				</div>
-				<div>
+
+				<div id="compose-mode">
 					<label class="text-sm text-muted-foreground">Docker Compose YAML</label>
 					<textarea id="compose-yaml" class="mt-1 w-full rounded border border-border bg-background p-2 text-sm" rows="18">{{.ComposeYAML}}</textarea>
 				</div>
+
+				<div id="repo-mode" class="space-y-3">
+					<div>
+						<label class="text-sm text-muted-foreground">Repository URL</label>
+						<input id="repo-url" type="text" class="mt-1 w-full rounded border border-border bg-background px-2 py-2 text-sm" value="{{.RepoURL}}" placeholder="https://github.com/owner/repository.git" />
+					</div>
+					<div>
+						<label class="text-sm text-muted-foreground">Branch</label>
+						<input id="repo-branch" type="text" class="mt-1 w-full rounded border border-border bg-background px-2 py-2 text-sm" value="{{.RepoBranch}}" placeholder="main" />
+					</div>
+					<div>
+						<label class="text-sm text-muted-foreground">Compose file path (optional)</label>
+						<input id="repo-compose-path" type="text" class="mt-1 w-full rounded border border-border bg-background px-2 py-2 text-sm" value="{{.ComposePath}}" placeholder="docker-compose.yml or compose.yml" />
+					</div>
+					<div>
+						<label class="text-sm text-muted-foreground">App port (required for Dockerfile fallback)</label>
+						<input id="repo-app-port" type="number" min="1" max="65535" class="mt-1 w-full rounded border border-border bg-background px-2 py-2 text-sm" value="{{.AppPort}}" placeholder="3000" />
+						<div class="text-xs text-muted-foreground">If compose file is not provided, this value is mapped to generated Compose as HOST:CONTAINER.</div>
+					</div>
+					<label class="flex items-center gap-2 text-sm">
+						<input id="repo-auto-deploy" type="checkbox" checked />
+						<span>Deploy immediately after import</span>
+					</label>
+				</div>
+
 				<div id="compose-status" class="text-sm text-muted-foreground"></div>
 				<div class="flex flex-wrap gap-2">
 					<button type="button" class="px-3 py-2 rounded border border-border text-sm" onclick="saveCompose(false)">{{.ActionLabel}}</button>
@@ -25,47 +56,133 @@
 		</div>
 		<div class="rounded border border-border bg-card p-4 space-y-2">
 			<div class="font-semibold">Shortcuts</div>
-			<p class="text-sm text-muted-foreground">
-				Do not use the obsolete <code>version:</code> key.
-				Use <code>command:</code> instead of <code>args:</code> for passing arguments to containers.
-			</p>
-			<p class="text-sm text-muted-foreground">Use valid Docker Compose syntax. The app will be persisted in BoltDB and stored under the configured stacks directory on deploy.</p>
-			<p class="text-sm text-muted-foreground">After saving you can continue editing, inspect logs, or deploy later from the app details page.</p>
+			<p class="text-sm text-muted-foreground">Do not use the obsolete <code>version:</code> key.</p>
+			<p class="text-sm text-muted-foreground">Use <code>command:</code> instead of <code>args:</code> for passing arguments to containers.</p>
+			<p class="text-sm text-muted-foreground">When import mode is selected, the system clones your public repo and validates compose file if present.</p>
+			<p class="text-sm text-muted-foreground">If no compose file is found, fallback uses Dockerfile + generated Compose, requiring an explicit port.</p>
 		</div>
 	</div>
 </section>
 <script>
 	const currentAppID = {{.AppIDJS}};
+	const initialMode = '{{if or (eq .SourceType "repo_compose") (eq .SourceType "repo_dockerfile")}}repo{{else}}compose{{end}}';
+	const composeModeNode = document.getElementById('compose-mode');
+	const repoModeNode = document.getElementById('repo-mode');
+	const composeTabNode = document.getElementById('tab-compose');
+	const repoTabNode = document.getElementById('tab-repo');
+	const statusNode = document.getElementById('compose-status');
+
+	function setMode(mode) {
+		const isRepo = mode === 'repo';
+		composeModeNode.classList.toggle('hidden', isRepo);
+		repoModeNode.classList.toggle('hidden', !isRepo);
+		composeTabNode.classList.toggle('bg-card', !isRepo);
+		repoTabNode.classList.toggle('bg-card', isRepo);
+	}
+
+	function toInt(value) {
+		const parsed = Number.parseInt(value, 10);
+		return Number.isFinite(parsed) ? parsed : 0;
+	}
+
 	async function saveCompose(shouldDeploy) {
-		const statusNode = document.getElementById('compose-status');
 		if (statusNode) statusNode.textContent = shouldDeploy ? 'Saving and deploying...' : 'Saving...';
-		const payload = {
-			name: document.getElementById('app-name').value,
-			compose_yaml: document.getElementById('compose-yaml').value
-		};
+		const appName = document.getElementById('app-name').value.trim();
+		const isRepoMode = !composeModeNode.classList.contains('hidden');
+		const composeActive = !composeModeNode.classList.contains('hidden');
+		const usingRepoMode = !composeActive;
+
+		if (appName === '') {
+			if (statusNode) statusNode.textContent = 'App name is required';
+			return;
+		}
+
+		if (usingRepoMode) {
+			const repoURL = document.getElementById('repo-url').value.trim();
+			const composePath = document.getElementById('repo-compose-path').value.trim();
+			const repoPort = toInt(document.getElementById('repo-app-port').value);
+			if (!repoURL) {
+				if (statusNode) statusNode.textContent = 'Repository URL is required';
+				return;
+			}
+			if (!composePath && repoPort <= 0) {
+				if (statusNode) statusNode.textContent = 'App port is required when compose path is not provided';
+				return;
+			}
+		}
+
+		const endpoint = usingRepoMode
+			? '/api/apps/import'
+			: (currentAppID ? '/api/apps/' + encodeURIComponent(currentAppID) : '/api/apps');
 		const method = currentAppID ? 'PUT' : 'POST';
-		const endpoint = currentAppID ? '/api/apps/' + encodeURIComponent(currentAppID) : '/api/apps';
-		const response = await fetch(endpoint, {
-			method,
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(payload)
-		});
+		let body;
+		let requestInit;
+
+		if (usingRepoMode) {
+			body = {
+				name: appName,
+				repo_url: document.getElementById('repo-url').value.trim(),
+				branch: document.getElementById('repo-branch').value.trim(),
+				compose_path: document.getElementById('repo-compose-path').value.trim(),
+				app_port: toInt(document.getElementById('repo-app-port').value),
+				auto_deploy: (currentAppID ? false : (document.getElementById('repo-auto-deploy').checked || false))
+			};
+			requestInit = {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(body)
+			};
+		} else {
+			body = {
+				name: appName,
+				compose_yaml: document.getElementById('compose-yaml').value
+			};
+			requestInit = {
+				method,
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(body)
+			};
+		}
+
+		if (usingRepoMode && currentAppID) {
+			if (statusNode) statusNode.textContent = 'Import mode updates existing applications are disabled';
+			return;
+		}
+
+		const response = await fetch(endpoint, requestInit);
 		const appPayload = await response.json().catch(() => ({}));
 		if (!response.ok) {
 			if (statusNode) statusNode.textContent = appPayload.error || 'Save failed';
 			return;
 		}
+
 		if (!shouldDeploy) {
+			if (usingRepoMode && !currentAppID) {
+				window.location.href = '/apps';
+				return;
+			}
 			window.location.href = '/apps/' + encodeURIComponent(appPayload.id) + '/compose';
 			return;
 		}
-		const deployResponse = await fetch('/api/apps/' + encodeURIComponent(appPayload.id) + '/deploy', { method: 'POST' });
-		const deployPayload = await deployResponse.json().catch(() => ({}));
-		if (!deployResponse.ok) {
-			if (statusNode) statusNode.textContent = deployPayload.error || 'Deploy failed';
+
+		const appID = appPayload.id || currentAppID;
+		if (!appID) {
+			if (statusNode) statusNode.textContent = 'App created but no ID was returned';
 			return;
 		}
-		window.location.href = '/apps/' + encodeURIComponent(appPayload.id);
+
+		if (!usingRepoMode && currentAppID) {
+			const deployResponse = await fetch('/api/apps/' + encodeURIComponent(appID) + '/deploy', { method: 'POST' });
+			const deployPayload = await deployResponse.json().catch(() => ({}));
+			if (!deployResponse.ok) {
+				if (statusNode) statusNode.textContent = deployPayload.error || 'Deploy failed';
+				return;
+			}
+		}
+
+		window.location.href = '/apps/' + encodeURIComponent(appID);
 	}
+
+	setMode(initialMode);
 </script>
 {{end}}
