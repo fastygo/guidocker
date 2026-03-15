@@ -1,9 +1,9 @@
 @import "tailwindcss";
 
+@import "./latty.css";
+
 /* Scan HTML templates for Tailwind classes */
 @source "../../views/**/*.html";
-
-@import "tailwindcss";
 
 @custom-variant dark (&:is(.dark *));
 

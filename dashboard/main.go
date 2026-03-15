@@ -101,9 +101,16 @@ func main() {
 		}
 	}()
 
-	dockerRepository := dockerrepo.NewDockerRepository(cfg.Stacks.Dir)
-	if err := dockerRepository.EnsureNetwork(context.Background()); err != nil {
-		log.Fatalf("❌ Failed to ensure app network: %v", err)
+	var dockerRepository domain.DockerRepository
+	if cfg.DevMode {
+		dockerRepository = dockerrepo.NewMockRepository()
+		log.Printf("🔧 Dev mode: using mock Docker repository (no Docker required)")
+	} else {
+		dr := dockerrepo.NewDockerRepository(cfg.Stacks.Dir)
+		if err := dr.EnsureNetwork(context.Background()); err != nil {
+			log.Fatalf("❌ Failed to ensure app network: %v", err)
+		}
+		dockerRepository = dr
 	}
 	gitRepository := gitrepo.NewGitRepository()
 	platformSettingsRepository, err := boltrepo.NewPlatformSettingsRepository(cfg.Stacks.DBFile)

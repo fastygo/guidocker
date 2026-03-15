@@ -115,6 +115,15 @@ go install github.com/air-verse/air@latest
 
 Or use a single terminal: `npm run dev:air`.
 
+**Run without Docker (UI-only dev mode):**
+
+```bash
+cd dashboard
+DASHBOARD_DEV_MODE=true DASHBOARD_AUTH_DISABLED=true go run .
+```
+
+Uses a mock Docker repository so you can test the UI without Docker installed.
+
 **Disable auth for local iteration:**
 
 ```bash
@@ -231,6 +240,8 @@ Applications should prefer internal networking (`expose`) instead of published h
 | `PAAS_ADMIN_USER`      | `admin`                 | Login username                       |
 | `PAAS_ADMIN_PASS`      | `admin@123`             | Login password                       |
 | `DASHBOARD_AUTH_DISABLED` | `false`             | Disable auth for local dev           |
+| `DASHBOARD_DEV_MODE`   | `false`             | Use mock Docker (UI testing without Docker) |
+| `PAAS_MOCK_UI`         | `false`             | Alias for `DASHBOARD_DEV_MODE`       |
 | `STACKS_DIR`           | `/opt/stacks`           | Base directory for compose stacks    |
 | `BOLT_DB_FILE`         | `/opt/stacks/.paas.db`  | BoltDB file path                     |
 | `DASHBOARD_DATA_FILE`  | `data/dashboard.json`    | Legacy JSON dashboard source         |

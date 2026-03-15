@@ -7,7 +7,7 @@
     "dev:css": "tailwindcss -i ./static/css/input.css -o ./static/css/app.css --watch",
     "build:css": "tailwindcss -i ./static/css/input.css -o ./static/css/app.css",
     "build:www": "tailwindcss -i ../website/style.input.css -o ../website/style.css",
-    "dev:air": "air",
+    "dev:air": "DASHBOARD_DEV_MODE=true DASHBOARD_AUTH_DISABLED=true air",
     "clean:go": "go clean -cache -modcache -testcache",
     "clean:npm": "npm cache clean --force && npm cache verify",
     "clean:bun": "bun pm cache rm",

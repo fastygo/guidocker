@@ -7,8 +7,8 @@
 	<div class="grid gap-3 lg:grid-cols-[2fr_1fr]">
 		<div class="rounded border border-border bg-card p-4 space-y-3">
 			<div class="flex gap-2">
-				<button id="tab-compose" type="button" class="rounded border px-3 py-1.5 text-sm" onclick="setMode('compose')">Compose YAML</button>
-				<button id="tab-repo" type="button" class="rounded border px-3 py-1.5 text-sm" onclick="setMode('repo')">Import from Git repo</button>
+				<button id="tab-compose" type="button" class="rounded border px-4 py-1.5 text-sm" onclick="setMode('compose')">Compose YAML</button>
+				<button id="tab-repo" type="button" class="rounded border px-4 py-1.5 text-sm" onclick="setMode('repo')">Import from Git repo</button>
 			</div>
 
 			<div class="font-semibold">Compose pack</div>
@@ -49,8 +49,8 @@
 
 				<div id="compose-status" class="text-sm text-muted-foreground"></div>
 				<div class="flex flex-wrap gap-2">
-					<button type="button" class="px-3 py-2 rounded border border-border text-sm" onclick="saveCompose(false)">{{.ActionLabel}}</button>
-					<button type="button" class="px-3 py-2 rounded border border-border text-sm" onclick="saveCompose(true)">Deploy now</button>
+					<button type="button" class="px-4 py-2 rounded border border-border text-sm" onclick="saveCompose(false)">{{.ActionLabel}}</button>
+					<button type="button" class="px-4 py-2 rounded border border-border text-sm" onclick="saveCompose(true)">Deploy now</button>
 				</div>
 			</form>
 		</div>

@@ -9,11 +9,12 @@ import (
 
 // Config holds application configuration
 type Config struct {
-	Server ServerConfig
-	Data   DataConfig
-	Auth   AuthConfig
-	Stacks StacksConfig
-	Import RepoImportConfig
+	Server   ServerConfig
+	Data     DataConfig
+	Auth     AuthConfig
+	Stacks   StacksConfig
+	Import   RepoImportConfig
+	DevMode  bool // Use mock Docker repository for UI testing without Docker
 }
 
 // ServerConfig holds server-related configuration
@@ -70,6 +71,7 @@ func Load() *Config {
 		Timeout:  getEnvAsDuration("REPO_IMPORT_TIMEOUT_SECONDS", 300*time.Second),
 		TempPath: getEnv("REPO_IMPORT_TEMP_PATH", ".tmp"),
 	},
+		DevMode: getEnvAsBoolAny([]string{"DASHBOARD_DEV_MODE", "PAAS_MOCK_UI"}, false),
 	}
 }
 
