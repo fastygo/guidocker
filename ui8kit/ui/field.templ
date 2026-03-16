@@ -9,24 +9,29 @@ type FieldOption struct {
 
 type FieldProps struct {
 	utils.UtilityProps
-	Class       string
-	Variant     string
-	Size        string
-	Type        string
-	Name        string
-	ID          string
-	Placeholder string
-	Value       string
-	Rows        int
-	Min         string
-	Max         string
-	Checked     bool
-	Disabled    bool
-	Component   string
-	Options     []FieldOption
+	Class        string
+	Variant      string
+	Size         string
+	Type         string
+	Name         string
+	ID           string
+	Placeholder  string
+	Value        string
+	Rows         int
+	Min          string
+	Max          string
+	Checked      bool
+	Disabled     bool
+	Required     bool
+	Autocomplete string
+	Component    string
+	Options      []FieldOption
 }
 
 func (p FieldProps) classes() string {
+	if p.Type == "checkbox" || p.Type == "radio" {
+		return utils.Cn(utils.FieldControlVariant(p.Variant), utils.FieldControlSizeVariant(p.Size), p.UtilityProps.Resolve(), p.Class)
+	}
 	return utils.Cn(utils.FieldVariant(p.Variant), utils.FieldSizeVariant(p.Size), p.UtilityProps.Resolve(), p.Class)
 }
 
@@ -54,6 +59,6 @@ templ Field(props FieldProps) {
 			}
 		</select>
 	} else {
-		<input id={ props.ID } name={ props.Name } type={ props.inputType() } class={ props.classes() } placeholder={ props.Placeholder } value={ props.Value } min={ props.Min } max={ props.Max } if props.Checked { checked } if props.Disabled { disabled }/>
+		<input id={ props.ID } name={ props.Name } type={ props.inputType() } class={ props.classes() } placeholder={ props.Placeholder } value={ props.Value } min={ props.Min } max={ props.Max } autocomplete={ props.Autocomplete } if props.Checked { checked } if props.Disabled { disabled } if props.Required { required }/>
 	}
 }

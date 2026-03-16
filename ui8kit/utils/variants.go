@@ -101,7 +101,7 @@ func TypographyClasses(fontSize, fontWeight, lineHeight, letterSpacing, textColo
 }
 
 func FieldVariant(variant string) string {
-	base := "w-full rounded border px-3 py-2 text-sm outline-none transition-colors"
+	base := "w-full rounded border px-3 py-2 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50"
 	switch variant {
 	case "", "default", "outline":
 		return Cn(base, "border-border bg-background")
@@ -125,6 +125,75 @@ func FieldSizeVariant(size string) string {
 	default:
 		return size
 	}
+}
+
+// FieldControlVariant returns classes for checkbox/radio inputs.
+func FieldControlVariant(variant string) string {
+	base := "rounded border border-primary text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50"
+	switch variant {
+	case "", "default", "outline":
+		return Cn(base, "border-primary")
+	case "ghost":
+		return Cn(base, "border-primary/50 bg-muted/30")
+	default:
+		return Cn(base, variant)
+	}
+}
+
+// FieldControlSizeVariant returns size classes for checkbox/radio.
+func FieldControlSizeVariant(size string) string {
+	switch size {
+	case "xs":
+		return "h-3 w-3"
+	case "sm":
+		return "h-3.5 w-3.5"
+	case "", "default", "md":
+		return "h-4 w-4"
+	case "lg":
+		return "h-5 w-5"
+	default:
+		return size
+	}
+}
+
+// FormLabelVariant returns classes for form label text (block, text-sm, muted).
+func FormLabelVariant() string {
+	return "block text-sm text-muted-foreground"
+}
+
+// FormLabelInlineVariant returns classes for inline label (flex, gap-2, text-sm).
+func FormLabelInlineVariant() string {
+	return "flex items-center gap-2 text-sm"
+}
+
+// TableVariant returns base table classes.
+func TableVariant() string {
+	return "w-full"
+}
+
+// TableHeaderVariant returns thead/th classes.
+func TableHeaderVariant() string {
+	return "bg-muted"
+}
+
+// TableHeaderCellVariant returns th cell classes.
+func TableHeaderCellVariant() string {
+	return "min-w-0 px-4 py-2 text-left text-xs font-semibold text-muted-foreground"
+}
+
+// TableBodyVariant returns tbody classes.
+func TableBodyVariant() string {
+	return "divide-y divide-border"
+}
+
+// TableCellVariant returns td cell classes.
+func TableCellVariant() string {
+	return "min-w-0 px-4 py-2 text-sm"
+}
+
+// TableCellMutedVariant returns td cell classes for muted text.
+func TableCellMutedVariant() string {
+	return "min-w-0 px-4 py-2 text-sm text-muted-foreground"
 }
 
 func StatusBadgeClass(status string) string {

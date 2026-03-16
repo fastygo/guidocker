@@ -1,12 +1,17 @@
 package pages
 
 import (
+	"fmt"
 	"gui-docker/domain"
 	"strings"
 	"time"
 	kitlayout "ui8kit/layout"
 	"ui8kit/utils"
 )
+
+func FormatInt(n int) string {
+	return fmt.Sprintf("%d", n)
+}
 
 func JoinStrings(items []string, sep string) string {
 	return strings.Join(items, sep)

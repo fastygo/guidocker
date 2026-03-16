@@ -87,21 +87,23 @@ type FieldOption struct {
 
 type FieldProps struct {
 	utils.UtilityProps
-	Class       string
-	Variant     string
-	Size        string
-	Type        string
-	Name        string
-	ID          string
-	Placeholder string
-	Value       string
-	Rows        int
-	Min         string
-	Max         string
-	Checked     bool
-	Disabled    bool
-	Component   string
-	Options     []FieldOption
+	Class        string
+	Variant      string
+	Size         string
+	Type         string
+	Name         string
+	ID           string
+	Placeholder  string
+	Value        string
+	Rows         int
+	Min          string
+	Max          string
+	Checked      bool
+	Disabled     bool
+	Required     bool
+	Autocomplete string
+	Component    string
+	Options      []FieldOption
 }
 
 type IconProps struct {
@@ -113,6 +115,13 @@ type IconProps struct {
 func writeString(w io.Writer, value string) error {
 	_, err := io.WriteString(w, value)
 	return err
+}
+
+func fieldClasses(p FieldProps) string {
+	if p.Type == "checkbox" || p.Type == "radio" {
+		return utils.Cn(utils.FieldControlVariant(p.Variant), utils.FieldControlSizeVariant(p.Size), p.UtilityProps.Resolve(), p.Class)
+	}
+	return utils.Cn(utils.FieldVariant(p.Variant), utils.FieldSizeVariant(p.Size), p.UtilityProps.Resolve(), p.Class)
 }
 
 func renderWrapped(tag, className string, children templ.Component) templ.Component {
@@ -213,7 +222,7 @@ func Title(props TitleProps, value string) templ.Component {
 
 func Field(props FieldProps) templ.Component {
 	return templ.ComponentFunc(func(_ context.Context, w io.Writer) error {
-		className := utils.Cn(utils.FieldVariant(props.Variant), utils.FieldSizeVariant(props.Size), props.Resolve(), props.Class)
+		className := fieldClasses(props)
 		disabled := ""
 		if props.Disabled {
 			disabled = " disabled"
@@ -248,7 +257,15 @@ func Field(props FieldProps) templ.Component {
 			if props.Checked {
 				checked = " checked"
 			}
-			return writeString(w, fmt.Sprintf(`<input id="%s" name="%s" type="%s" class="%s" placeholder="%s" value="%s" min="%s" max="%s"%s%s />`, html.EscapeString(props.ID), html.EscapeString(props.Name), html.EscapeString(inputType), html.EscapeString(className), html.EscapeString(props.Placeholder), html.EscapeString(props.Value), html.EscapeString(props.Min), html.EscapeString(props.Max), checked, disabled))
+			autocomplete := ""
+			if props.Autocomplete != "" {
+				autocomplete = fmt.Sprintf(` autocomplete="%s"`, html.EscapeString(props.Autocomplete))
+			}
+			required := ""
+			if props.Required {
+				required = " required"
+			}
+			return writeString(w, fmt.Sprintf(`<input id="%s" name="%s" type="%s" class="%s" placeholder="%s" value="%s" min="%s" max="%s"%s%s%s%s />`, html.EscapeString(props.ID), html.EscapeString(props.Name), html.EscapeString(inputType), html.EscapeString(className), html.EscapeString(props.Placeholder), html.EscapeString(props.Value), html.EscapeString(props.Min), html.EscapeString(props.Max), autocomplete, checked, disabled, required))
 		}
 	})
 }

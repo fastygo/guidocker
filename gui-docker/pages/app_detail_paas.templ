@@ -3,6 +3,7 @@ package pages
 import (
 	"github.com/a-h/templ"
 	kitlayout "ui8kit/layout"
+	kitui "ui8kit/ui"
 )
 
 const appDetailPaasScript = `function appId() {
@@ -114,13 +115,22 @@ templ AppDetailPaasContent(data AppDetailPaasView) {
 			</div>
 			<div class="card card-content space-y-3">
 				<div class="font-semibold">Public access</div>
-				<label class="block text-sm text-muted-foreground">Public domain<input id="app-public-domain" type="text" class="form-input" placeholder="app.example.com"/></label>
+				<label class="form-label">Public domain
+					@kitui.Field(kitui.FieldProps{ID: "app-public-domain", Type: "text", Placeholder: "app.example.com"})
+				</label>
 				<p class="text-xs text-muted-foreground">Traffic starts as HTTP by default on the configured domain.</p>
-				<label class="block text-sm text-muted-foreground">Proxy target port<input id="app-proxy-target-port" type="number" min="1" max="65535" class="form-input" placeholder="3000"/></label>
+				<label class="form-label">Proxy target port
+					@kitui.Field(kitui.FieldProps{ID: "app-proxy-target-port", Type: "number", Min: "1", Max: "65535", Placeholder: "3000"})
+				</label>
 				<p class="text-xs text-muted-foreground">Use the internal container port that the host nginx proxy should target on the managed Docker network.</p>
-				<label class="flex items-center gap-2 text-sm"><input id="app-use-tls" type="checkbox"/><span>Enable HTTPS on proxy</span></label>
+				<label class="form-label-inline">
+					@kitui.Field(kitui.FieldProps{ID: "app-use-tls", Type: "checkbox"})
+					<span>Enable HTTPS on proxy</span>
+				</label>
 				<p class="text-xs text-muted-foreground">Enable HTTPS only after valid Let's Encrypt settings are configured; otherwise the app remains available on HTTP.</p>
-				<label class="block text-sm text-muted-foreground">Managed environment variables<textarea id="app-managed-env" class="mt-1 w-full rounded border border-border bg-background p-2 text-sm" rows="6"></textarea></label>
+				<label class="form-label">Managed environment variables
+					@kitui.Field(kitui.FieldProps{ID: "app-managed-env", Component: "textarea", Rows: 6})
+				</label>
 				<button type="button" class="rounded border border-border px-4 py-2 text-sm" onclick="saveAppConfig()">Save app settings</button>
 				<div id="app-config-feedback" class="text-sm text-muted-foreground"></div>
 			</div>

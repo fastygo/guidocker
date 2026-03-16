@@ -3,6 +3,7 @@ package pages
 import (
 	"github.com/a-h/templ"
 	kitlayout "ui8kit/layout"
+	kitui "ui8kit/ui"
 )
 
 const composeScript = `function composeRoot() { return document.getElementById('compose-root'); }
@@ -86,14 +87,30 @@ templ ComposeContent(data ComposeView) {
 				</div>
 				<div class="font-semibold">Compose pack</div>
 				<form id="compose-form" class="space-y-3">
-					<div><label class="form-label">App name</label><input id="app-name" class="form-input" value={ data.Name }/></div>
-					<div id="compose-mode"><label class="form-label">Docker Compose YAML</label><textarea id="compose-yaml" class="mt-1 w-full rounded border border-border bg-background p-2 text-sm" rows="18">{ data.ComposeYAML }</textarea></div>
+					<div><label class="form-label">App name</label>
+						@kitui.Field(kitui.FieldProps{ID: "app-name", Value: data.Name})
+					</div>
+					<div id="compose-mode"><label class="form-label">Docker Compose YAML</label>
+						@kitui.Field(kitui.FieldProps{ID: "compose-yaml", Component: "textarea", Value: data.ComposeYAML, Rows: 18})
+					</div>
 					<div id="repo-mode" class="space-y-3">
-						<div><label class="form-label">Repository URL</label><input id="repo-url" type="text" class="form-input" value={ data.RepoURL } placeholder="https://github.com/owner/repository.git"/></div>
-						<div><label class="form-label">Branch</label><input id="repo-branch" type="text" class="form-input" value={ data.RepoBranch } placeholder="main"/></div>
-						<div><label class="form-label">Compose file path (optional)</label><input id="repo-compose-path" type="text" class="form-input" value={ data.ComposePath } placeholder="docker-compose.yml or compose.yml"/></div>
-						<div><label class="form-label">App port (required for Dockerfile fallback)</label><input id="repo-app-port" type="number" min="1" max="65535" class="form-input" value={ data.AppPort } placeholder="3000"/><div class="text-xs text-muted-foreground">If compose file is not provided, this value is mapped to generated Compose as HOST:CONTAINER.</div></div>
-						<label class="flex items-center gap-2 text-sm"><input id="repo-auto-deploy" type="checkbox" checked/><span>Deploy immediately after import</span></label>
+						<div><label class="form-label">Repository URL</label>
+							@kitui.Field(kitui.FieldProps{ID: "repo-url", Type: "text", Value: data.RepoURL, Placeholder: "https://github.com/owner/repository.git"})
+						</div>
+						<div><label class="form-label">Branch</label>
+							@kitui.Field(kitui.FieldProps{ID: "repo-branch", Type: "text", Value: data.RepoBranch, Placeholder: "main"})
+						</div>
+						<div><label class="form-label">Compose file path (optional)</label>
+							@kitui.Field(kitui.FieldProps{ID: "repo-compose-path", Type: "text", Value: data.ComposePath, Placeholder: "docker-compose.yml or compose.yml"})
+						</div>
+						<div><label class="form-label">App port (required for Dockerfile fallback)</label>
+							@kitui.Field(kitui.FieldProps{ID: "repo-app-port", Type: "number", Min: "1", Max: "65535", Value: FormatInt(data.AppPort), Placeholder: "3000"})
+							<div class="text-xs text-muted-foreground">If compose file is not provided, this value is mapped to generated Compose as HOST:CONTAINER.</div>
+						</div>
+						<label class="form-label-inline">
+							@kitui.Field(kitui.FieldProps{ID: "repo-auto-deploy", Type: "checkbox", Checked: true})
+							<span>Deploy immediately after import</span>
+						</label>
 					</div>
 					<div id="compose-status" class="text-sm text-muted-foreground"></div>
 					<div class="flex flex-wrap gap-2"><button type="button" class="rounded border border-border px-4 py-2 text-sm" onclick="saveCompose(false)">{ data.ActionLabel }</button><button type="button" class="rounded border border-border px-4 py-2 text-sm" onclick="saveCompose(true)">Deploy now</button></div>

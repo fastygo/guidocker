@@ -1,6 +1,9 @@
 package pages
 
-import kitlayout "ui8kit/layout"
+import (
+	kitlayout "ui8kit/layout"
+	kitui "ui8kit/ui"
+)
 
 templ ComposeContainerPage(data ComposeContainerView) {
 	@kitlayout.Shell(kitlayout.ShellProps{Title: data.Title, Active: data.Active, NavItems: NavigationItems()}, ComposeContainerContent(data))
@@ -16,9 +19,15 @@ templ ComposeContainerContent(data ComposeContainerView) {
 			<div class="card card-content">
 				<div class="font-semibold">Compose pack</div>
 				<form onsubmit="event.preventDefault(); showComposeMessage('Compose saved to local draft');" class="space-y-3">
-					<div><label class="form-label">App name</label><input class="form-input" value={ data.Name }/></div>
-					<div><label class="form-label">Service image</label><input class="form-input" value={ data.Image }/></div>
-					<div><label class="form-label">Docker Compose yaml</label><textarea class="mt-1 w-full rounded border border-border bg-background p-2 text-sm" rows="14">{ data.ComposeYAML }</textarea></div>
+					<div><label class="form-label">App name
+						@kitui.Field(kitui.FieldProps{ID: "compose-name", Name: "name", Type: "text", Value: data.Name})
+					</label></div>
+					<div><label class="form-label">Service image
+						@kitui.Field(kitui.FieldProps{ID: "compose-image", Name: "image", Type: "text", Value: data.Image})
+					</label></div>
+					<div><label class="form-label">Docker Compose yaml
+						@kitui.Field(kitui.FieldProps{ID: "compose-yaml", Name: "compose", Component: "textarea", Rows: 14, Value: data.ComposeYAML})
+					</label></div>
 					<div id="compose-status" class="text-sm text-muted-foreground"></div>
 					<div class="flex gap-2">
 						<button type="submit" class="rounded border border-border px-4 py-2 text-sm">Save compose</button>

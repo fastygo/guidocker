@@ -1,5 +1,7 @@
 package pages
 
+import kitui "ui8kit/ui"
+
 templ LoginPage(data LoginView) {
 	<!DOCTYPE html>
 	<html lang="en">
@@ -20,8 +22,12 @@ templ LoginPage(data LoginView) {
 						<div class="mt-4 rounded border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">{ data.Message }</div>
 					}
 					<div class="mt-4 space-y-4">
-						<label class="block text-sm">Username<input type="text" name="username" autocomplete="username" required class="form-input"/></label>
-						<label class="block text-sm">Password<input type="password" name="password" autocomplete="current-password" required class="form-input"/></label>
+						<label class="form-label">Username
+							@kitui.Field(kitui.FieldProps{ID: "username", Name: "username", Type: "text", Autocomplete: "username", Required: true})
+						</label>
+						<label class="form-label">Password
+							@kitui.Field(kitui.FieldProps{ID: "password", Name: "password", Type: "password", Autocomplete: "current-password", Required: true})
+						</label>
 						<button type="submit" class="rounded border border-border bg-primary px-4 py-2 text-sm text-primary-foreground">Login</button>
 					</div>
 				</form>

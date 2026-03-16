@@ -3,6 +3,7 @@ package pages
 import (
 	"github.com/a-h/templ"
 	kitlayout "ui8kit/layout"
+	kitui "ui8kit/ui"
 )
 
 const settingsScript = `async function loadAdminSettings() {
@@ -63,16 +64,39 @@ templ SettingsContent(data LayoutData) {
 			<div class="card card-content">
 				<div class="font-semibold">Admin panel endpoint</div>
 				<div class="space-y-3">
-					<label class="block text-sm text-muted-foreground">Admin host<input id="admin-host" class="form-input" placeholder="0.0.0.0"/></label>
-					<label class="block text-sm text-muted-foreground">Admin port<input id="admin-port" type="number" min="1" max="65535" class="form-input" placeholder="3000"/></label>
-					<label class="block text-sm text-muted-foreground">Admin domain (optional)<input id="admin-domain" class="form-input" placeholder="dashboard.example.com"/></label>
-					<label class="flex items-center gap-2 text-sm"><input id="admin-use-tls" type="checkbox"/><span>Enable HTTPS for admin endpoint</span></label>
-					<label class="block text-sm text-muted-foreground">Let's Encrypt email<input id="certbot-email" class="form-input" placeholder="admin@example.com"/></label>
-					<label class="flex items-center gap-2 text-sm"><input id="certbot-enabled" type="checkbox"/><span>Enable certificate automation</span></label>
-					<label class="flex items-center gap-2 text-sm"><input id="certbot-staging" type="checkbox"/><span>Use Let's Encrypt staging environment</span></label>
-					<label class="flex items-center gap-2 text-sm"><input id="certbot-auto-renew" type="checkbox" checked/><span>Enable automatic renewal</span></label>
+					<label class="form-label">Admin host
+						@kitui.Field(kitui.FieldProps{ID: "admin-host", Placeholder: "0.0.0.0"})
+					</label>
+					<label class="form-label">Admin port
+						@kitui.Field(kitui.FieldProps{ID: "admin-port", Type: "number", Min: "1", Max: "65535", Placeholder: "3000"})
+					</label>
+					<label class="form-label">Admin domain (optional)
+						@kitui.Field(kitui.FieldProps{ID: "admin-domain", Placeholder: "dashboard.example.com"})
+					</label>
+					<label class="form-label-inline">
+						@kitui.Field(kitui.FieldProps{ID: "admin-use-tls", Type: "checkbox"})
+						<span>Enable HTTPS for admin endpoint</span>
+					</label>
+					<label class="form-label">Let's Encrypt email
+						@kitui.Field(kitui.FieldProps{ID: "certbot-email", Placeholder: "admin@example.com"})
+					</label>
+					<label class="form-label-inline">
+						@kitui.Field(kitui.FieldProps{ID: "certbot-enabled", Type: "checkbox"})
+						<span>Enable certificate automation</span>
+					</label>
+					<label class="form-label-inline">
+						@kitui.Field(kitui.FieldProps{ID: "certbot-staging", Type: "checkbox"})
+						<span>Use Let's Encrypt staging environment</span>
+					</label>
+					<label class="form-label-inline">
+						@kitui.Field(kitui.FieldProps{ID: "certbot-auto-renew", Type: "checkbox", Checked: true})
+						<span>Enable automatic renewal</span>
+					</label>
 					<p class="mt-1 text-xs text-muted-foreground">Renewal uses the host-installed <code>certbot</code> binary through the dashboard controller container. If you disable automatic renewal, add a manual renewal schedule and keep host <code>nginx</code> reload enabled after renewal.</p>
-					<label class="flex items-center gap-2 text-sm"><input id="certbot-terms" type="checkbox"/><span>I accept Let's Encrypt terms of service</span></label>
+					<label class="form-label-inline">
+						@kitui.Field(kitui.FieldProps{ID: "certbot-terms", Type: "checkbox"})
+						<span>I accept Let's Encrypt terms of service</span>
+					</label>
 					<button type="button" class="rounded border border-border px-4 py-2 text-sm" onclick="saveAdminSettings()">Save admin settings</button>
 					<div id="admin-settings-feedback" class="text-sm text-muted-foreground"></div>
 					<button type="button" class="rounded border border-border px-4 py-2 text-sm" onclick="renewCertificates()">Run certificate renewal now</button>
