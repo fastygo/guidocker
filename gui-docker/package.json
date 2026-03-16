@@ -1,0 +1,12 @@
+{
+  "private": true,
+  "dependencies": {
+    "@tailwindcss/cli": "^4.2.1",
+    "tailwindcss": "^4.2.1"
+  },
+  "scripts": {
+    "dev:css": "npx @tailwindcss/cli -i ./static/css/input.css -o ./static/css/app.css --watch",
+    "build:css": "npx @tailwindcss/cli -i ./static/css/input.css -o ./static/css/app.css",
+    "dev:air": "DASHBOARD_DEV_MODE=true DASHBOARD_AUTH_DISABLED=true air"
+  }
+}
