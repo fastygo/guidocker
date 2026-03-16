@@ -6,14 +6,24 @@ A lightweight PaaS for managing Docker applications. Deploy, monitor, and clean 
 
 ```text
 @GUIDocker/
-├── dashboard/           # Go application — main PaaS server
+├── gui-docker/          # Go application — main PaaS server
 │   ├── config/          # Configuration
 │   ├── domain/          # Entities, ports
 │   ├── infrastructure/  # BoltDB, Docker CLI
-│   ├── interfaces/      # HTTP handlers, middleware
+│   ├── handlers/        # HTTP handlers
+│   ├── middleware/      # Auth/session middleware
+│   ├── pages/           # Component-based page rendering
 │   ├── usecase/         # App lifecycle, scanner
-│   ├── views/           # HTML templates
 │   └── static/          # Tailwind CSS, assets
+│
+├── ui8kit/              # Shared UI primitives, layout shell, styles
+│   ├── utils/           # Utility class resolution + variants
+│   ├── ui/              # Headless component primitives
+│   ├── layout/          # Shared shell, header, sidebar
+│   └── styles/          # Base/component/icon CSS
+│
+├── dashboard/           # Legacy implementation kept during migration
+│   └── ...              # Original HTML-template-based app
 │
 ├── website/             # Public home page / landing site
 │   ├── docker-compose.yml  # Importable static site stack
@@ -24,15 +34,17 @@ A lightweight PaaS for managing Docker applications. Deploy, monitor, and clean 
 └── .project/            # Project planning notes and internal docs
 ```
 
-- **dashboard/** — Go server with HTTP Basic Auth, BoltDB, and Docker Compose integration. Serves the full admin UI (Overview, Apps, Compose, Logs, Scanner, Settings) and REST API.
-- **website/** — Static landing page (HTML + Tailwind) for the public product home page. Built via `npm run build:www` from `dashboard/` and importable into the admin panel via `website/docker-compose.yml`.
+- **gui-docker/** — Current Go server with auth, BoltDB, Docker Compose integration, component-based pages, and REST APIs.
+- **ui8kit/** — Shared UI toolkit module for shell/layout primitives, widgets, and styles.
+- **dashboard/** — Legacy reference implementation preserved while the monorepo migration settles.
+- **website/** — Static landing page (HTML + Tailwind) for the public product home page.
 
 ## Quick Start
 
 ```bash
-cd dashboard
-go build -o dashboard .
-PAAS_ADMIN_USER=admin PAAS_ADMIN_PASS=admin@123 ./dashboard
+cd gui-docker
+go build -o gui-docker ./cmd
+PAAS_ADMIN_USER=admin PAAS_ADMIN_PASS=admin@123 ./gui-docker
 ```
 
 Open `http://localhost:3000`.
@@ -167,4 +179,4 @@ Expected result:
 
 ## Documentation
 
-- [dashboard/README.md](dashboard/README.md) — Full dashboard docs: setup, API, deployment, Makefile targets.
+- [dashboard/README.md](dashboard/README.md) — Legacy dashboard docs kept for migration/reference.
