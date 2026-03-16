@@ -407,12 +407,21 @@ type fakeScannerDockerRepository struct {
 	restartFn  func(context.Context, *domain.App) error
 	destroyFn  func(context.Context, *domain.App) error
 	getStatusFn func(context.Context, *domain.App) (string, error)
-	getLogsFn   func(context.Context, string, int) (string, error)
+	getLogsFn   func(context.Context, *domain.App, int) (string, error)
+	ensureNetworkFn func(context.Context) error
+	resolveContainerIPFn func(context.Context, *domain.App) (string, error)
 }
 
 func (r *fakeScannerDockerRepository) Deploy(ctx context.Context, app *domain.App) error {
 	if r.deployFn != nil {
 		return r.deployFn(ctx, app)
+	}
+	return nil
+}
+
+func (r *fakeScannerDockerRepository) EnsureNetwork(ctx context.Context) error {
+	if r.ensureNetworkFn != nil {
+		return r.ensureNetworkFn(ctx)
 	}
 	return nil
 }
@@ -445,9 +454,9 @@ func (r *fakeScannerDockerRepository) GetStatus(ctx context.Context, app *domain
 	return domain.AppStatusRunning, nil
 }
 
-func (r *fakeScannerDockerRepository) GetLogs(ctx context.Context, appID string, lines int) (string, error) {
+func (r *fakeScannerDockerRepository) GetLogs(ctx context.Context, app *domain.App, lines int) (string, error) {
 	if r.getLogsFn != nil {
-		return r.getLogsFn(ctx, appID, lines)
+		return r.getLogsFn(ctx, app, lines)
 	}
 	return "", nil
 }
@@ -468,6 +477,13 @@ func (r *fakeScannerDockerRepository) InspectContainers(ctx context.Context, ids
 		return r.inspectFn(ctx, ids)
 	}
 	return []domain.ContainerDetail{}, nil
+}
+
+func (r *fakeScannerDockerRepository) ResolveContainerIP(ctx context.Context, app *domain.App) (string, error) {
+	if r.resolveContainerIPFn != nil {
+		return r.resolveContainerIPFn(ctx, app)
+	}
+	return "", domain.ErrContainerNotFound
 }
 
 func cloneApp(app *domain.App) *domain.App {

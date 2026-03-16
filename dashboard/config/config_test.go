@@ -1,6 +1,7 @@
 package config
 
 import (
+	"path/filepath"
 	"testing"
 )
 
@@ -35,10 +36,10 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.Auth.Disabled {
 		t.Fatalf("expected auth enabled by default")
 	}
-	if cfg.Stacks.Dir != "/opt/stacks" {
+	if filepath.ToSlash(cfg.Stacks.Dir) != "/opt/stacks" {
 		t.Fatalf("expected default stacks dir /opt/stacks, got %q", cfg.Stacks.Dir)
 	}
-	if cfg.Stacks.DBFile != "/opt/stacks/.paas.db" {
+	if filepath.ToSlash(cfg.Stacks.DBFile) != "/opt/stacks/.paas.db" {
 		t.Fatalf("expected default BoltDB file /opt/stacks/.paas.db, got %q", cfg.Stacks.DBFile)
 	}
 }

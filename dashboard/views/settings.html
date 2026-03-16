@@ -2,17 +2,147 @@
 <section class="space-y-4">
 	<div>
 		<div class="text-2xl font-semibold">Settings</div>
-		<div class="text-sm text-muted-foreground">Placeholders for core PAAS settings modules.</div>
+		<div class="text-sm text-muted-foreground">Manage platform endpoint settings used by the admin API and external access.</div>
 	</div>
 	<div class="grid gap-3 md:grid-cols-2">
 		<div class="rounded border border-border bg-card p-4">
-			<div class="font-semibold">Display</div>
-			<p class="text-sm text-muted-foreground">Dark mode is controlled by the button in the header.</p>
+			<div class="font-semibold">Admin panel endpoint</div>
+			<div class="space-y-3">
+				<label class="block text-sm text-muted-foreground">Admin host
+					<input id="admin-host" class="mt-1 w-full rounded border border-border bg-background px-2 py-2 text-sm" placeholder="0.0.0.0" />
+				</label>
+				<label class="block text-sm text-muted-foreground">Admin port
+					<input id="admin-port" type="number" min="1" max="65535" class="mt-1 w-full rounded border border-border bg-background px-2 py-2 text-sm" placeholder="3000" />
+				</label>
+				<label class="block text-sm text-muted-foreground">Admin domain (optional)
+					<input id="admin-domain" class="mt-1 w-full rounded border border-border bg-background px-2 py-2 text-sm" placeholder="dashboard.example.com" />
+				</label>
+				<label class="flex items-center gap-2 text-sm">
+					<input id="admin-use-tls" type="checkbox" />
+					<span>Enable HTTPS for admin endpoint</span>
+				</label>
+				<label class="block text-sm text-muted-foreground">Let's Encrypt email
+					<input id="certbot-email" class="mt-1 w-full rounded border border-border bg-background px-2 py-2 text-sm" placeholder="admin@example.com" />
+				</label>
+				<label class="flex items-center gap-2 text-sm">
+					<input id="certbot-enabled" type="checkbox" />
+					<span>Enable certificate automation</span>
+				</label>
+				<label class="flex items-center gap-2 text-sm">
+					<input id="certbot-staging" type="checkbox" />
+					<span>Use Let's Encrypt staging environment</span>
+				</label>
+				<label class="flex items-center gap-2 text-sm">
+					<input id="certbot-auto-renew" type="checkbox" checked />
+					<span>Enable automatic renewal</span>
+				</label>
+				<p class="text-xs text-muted-foreground mt-1">
+					Renewal uses the host-installed <code>certbot</code> binary through the dashboard controller container.
+					If you disable automatic renewal, add a manual renewal schedule and keep host <code>nginx</code> reload enabled after renewal.
+				</p>
+				<label class="flex items-center gap-2 text-sm">
+					<input id="certbot-terms" type="checkbox" />
+					<span>I accept Let's Encrypt terms of service</span>
+				</label>
+				<button type="button" class="px-3 py-2 rounded border border-border text-sm" onclick="saveAdminSettings()">Save admin settings</button>
+				<div id="admin-settings-feedback" class="text-sm text-muted-foreground"></div>
+				<button type="button" class="px-3 py-2 rounded border border-border text-sm" onclick="renewCertificates()">Run certificate renewal now</button>
+				<div id="certbot-renew-feedback" class="text-sm text-muted-foreground"></div>
+			</div>
 		</div>
 		<div class="rounded border border-border bg-card p-4">
-			<div class="font-semibold">Security</div>
-			<p class="text-sm text-muted-foreground">Token access and audit controls are next sprint.</p>
+			<div class="font-semibold">Notes</div>
+			<ul class="space-y-2 text-sm text-muted-foreground list-disc list-inside">
+				<li>Platform exposes this config through <code>/api/settings</code>.</li>
+				<li>When domain is not set, the panel is reachable via host IP.</li>
+				<li>TLS settings are applied only when "Enable HTTPS on proxy" is enabled for an app.</li>
+				<li>Certificates are issued and removed against the host installation of <code>certbot</code>.</li>
+				<li>Host <code>nginx</code> owns ports 80/443 and keeps routing active even if the dashboard container is removed.</li>
+			</ul>
 		</div>
 	</div>
 </section>
+<script>
+	async function loadAdminSettings() {
+		const response = await fetch('/api/settings', { method: 'GET' });
+		const payload = await response.json().catch(() => ({}));
+		if (!response.ok) {
+			console.warn('Failed to load platform settings', payload);
+			return;
+		}
+
+		const hostNode = document.getElementById('admin-host');
+		const portNode = document.getElementById('admin-port');
+		const domainNode = document.getElementById('admin-domain');
+		const tlsNode = document.getElementById('admin-use-tls');
+		if (hostNode) hostNode.value = payload.admin_host || '';
+		if (portNode) portNode.value = payload.admin_port ? String(payload.admin_port) : '';
+		if (domainNode) domainNode.value = payload.admin_domain || '';
+		if (tlsNode) tlsNode.checked = !!payload.admin_use_tls;
+		const emailNode = document.getElementById('certbot-email');
+		const certbotEnabledNode = document.getElementById('certbot-enabled');
+		const certbotStagingNode = document.getElementById('certbot-staging');
+		const certbotAutoRenewNode = document.getElementById('certbot-auto-renew');
+		const certbotTermsNode = document.getElementById('certbot-terms');
+		if (emailNode) emailNode.value = payload.certbot_email || '';
+		if (certbotEnabledNode) certbotEnabledNode.checked = !!payload.certbot_enabled;
+		if (certbotStagingNode) certbotStagingNode.checked = !!payload.certbot_staging;
+		if (certbotAutoRenewNode) certbotAutoRenewNode.checked = payload.certbot_auto_renew !== false;
+		if (certbotTermsNode) certbotTermsNode.checked = !!payload.certbot_terms_accepted;
+	}
+
+	async function saveAdminSettings() {
+		const feedback = document.getElementById('admin-settings-feedback');
+		if (feedback) feedback.textContent = 'Saving settings...';
+
+		const hostNode = document.getElementById('admin-host');
+		const portNode = document.getElementById('admin-port');
+		const domainNode = document.getElementById('admin-domain');
+		const tlsNode = document.getElementById('admin-use-tls');
+		const emailNode = document.getElementById('certbot-email');
+		const certbotEnabledNode = document.getElementById('certbot-enabled');
+		const certbotStagingNode = document.getElementById('certbot-staging');
+		const certbotAutoRenewNode = document.getElementById('certbot-auto-renew');
+		const certbotTermsNode = document.getElementById('certbot-terms');
+		const payload = {
+			admin_host: hostNode ? hostNode.value.trim() : '',
+			admin_port: portNode ? Number.parseInt(portNode.value, 10) || 0 : 0,
+			admin_domain: domainNode ? domainNode.value.trim() : '',
+			admin_use_tls: tlsNode ? !!tlsNode.checked : false,
+			certbot_email: emailNode ? emailNode.value.trim() : '',
+			certbot_enabled: certbotEnabledNode ? !!certbotEnabledNode.checked : false,
+			certbot_staging: certbotStagingNode ? !!certbotStagingNode.checked : false,
+			certbot_auto_renew: certbotAutoRenewNode ? !!certbotAutoRenewNode.checked : false,
+			certbot_terms_accepted: certbotTermsNode ? !!certbotTermsNode.checked : false,
+		};
+
+		const response = await fetch('/api/settings', {
+			method: 'PUT',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(payload),
+		});
+		const body = await response.json().catch(() => ({}));
+		if (!response.ok) {
+			if (feedback) feedback.textContent = body.error || 'Failed to save settings';
+			return;
+		}
+		if (feedback) feedback.textContent = 'Settings saved';
+		await loadAdminSettings();
+	}
+
+	async function renewCertificates() {
+		const feedback = document.getElementById('certbot-renew-feedback');
+		if (feedback) feedback.textContent = 'Running renewal...';
+
+		const response = await fetch('/api/certificates/renew', { method: 'POST' });
+		const body = await response.json().catch(() => ({}));
+		if (!response.ok) {
+			if (feedback) feedback.textContent = body.error || 'Certificate renewal failed';
+			return;
+		}
+		if (feedback) feedback.textContent = body.message || 'Certificate renewal completed';
+	}
+
+	document.addEventListener('DOMContentLoaded', loadAdminSettings);
+</script>
 {{end}}

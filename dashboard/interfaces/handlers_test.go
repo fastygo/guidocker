@@ -37,6 +37,8 @@ type fakeDashboardUseCase struct {
 type fakeAppUseCase struct {
 	createFn    func(context.Context, string, string) (*domain.App, error)
 	updateFn    func(context.Context, string, string, string) (*domain.App, error)
+	updateConfigFn func(context.Context, string, domain.AppConfig) (*domain.App, error)
+	importFn    func(context.Context, domain.ImportRepoInput) (*domain.App, error)
 	deleteFn    func(context.Context, string) error
 	getFn       func(context.Context, string) (*domain.App, error)
 	listFn      func(context.Context) ([]*domain.App, error)
@@ -44,7 +46,26 @@ type fakeAppUseCase struct {
 	stopFn      func(context.Context, string) error
 	restartFn   func(context.Context, string) error
 	getStatusFn func(context.Context, string) (string, error)
-	getLogsFn   func(context.Context, string, int) (string, error)
+	getLogsFn   func(context.Context, *domain.App, int) (string, error)
+}
+
+type fakePlatformSettingsUseCase struct {
+	getSettingsFn  func(context.Context) (*domain.PlatformSettings, error)
+	updateSettingsFn func(context.Context, domain.PlatformSettings) (*domain.PlatformSettings, error)
+}
+
+func (m *fakePlatformSettingsUseCase) GetPlatformSettings(ctx context.Context) (*domain.PlatformSettings, error) {
+	if m.getSettingsFn != nil {
+		return m.getSettingsFn(ctx)
+	}
+	return nil, domain.ErrMissingPlatformSettingsRepository
+}
+
+func (m *fakePlatformSettingsUseCase) UpdatePlatformSettings(ctx context.Context, settings domain.PlatformSettings) (*domain.PlatformSettings, error) {
+	if m.updateSettingsFn != nil {
+		return m.updateSettingsFn(ctx, settings)
+	}
+	return nil, domain.ErrMissingPlatformSettingsRepository
 }
 
 func (m *fakeDashboardUseCase) GetDashboardData(ctx context.Context) (*domain.DashboardData, error) {
@@ -86,6 +107,20 @@ func (m *fakeAppUseCase) CreateApp(ctx context.Context, name, composeYAML string
 func (m *fakeAppUseCase) UpdateApp(ctx context.Context, id, name, composeYAML string) (*domain.App, error) {
 	if m.updateFn != nil {
 		return m.updateFn(ctx, id, name, composeYAML)
+	}
+	return nil, nil
+}
+
+func (m *fakeAppUseCase) UpdateAppConfig(ctx context.Context, id string, config domain.AppConfig) (*domain.App, error) {
+	if m.updateConfigFn != nil {
+		return m.updateConfigFn(ctx, id, config)
+	}
+	return nil, nil
+}
+
+func (m *fakeAppUseCase) ImportRepo(ctx context.Context, input domain.ImportRepoInput) (*domain.App, error) {
+	if m.importFn != nil {
+		return m.importFn(ctx, input)
 	}
 	return nil, nil
 }
@@ -139,11 +174,33 @@ func (m *fakeAppUseCase) GetAppStatus(ctx context.Context, id string) (string, e
 	return domain.AppStatusRunning, nil
 }
 
-func (m *fakeAppUseCase) GetAppLogs(ctx context.Context, id string, lines int) (string, error) {
+func (m *fakeAppUseCase) GetAppLogs(ctx context.Context, app *domain.App, lines int) (string, error) {
 	if m.getLogsFn != nil {
-		return m.getLogsFn(ctx, id, lines)
+		return m.getLogsFn(ctx, app, lines)
 	}
 	return "", nil
+}
+
+type fakeCertbotManager struct {
+	renewFn func(context.Context) error
+}
+
+func (m *fakeCertbotManager) RenewCertificates(ctx context.Context) error {
+	if m.renewFn != nil {
+		return m.renewFn(ctx)
+	}
+	return nil
+}
+
+type fakeHostManager struct {
+	reloadFn func(context.Context) error
+}
+
+func (m *fakeHostManager) ReloadRouting(ctx context.Context) error {
+	if m.reloadFn != nil {
+		return m.reloadFn(ctx)
+	}
+	return nil
 }
 
 func TestDashboardHandler_Dashboard_RendersHTML(t *testing.T) {
@@ -461,6 +518,26 @@ func TestDashboardHandler_APIApps_Create_NoServices_ReturnsBadRequest(t *testing
 	}
 }
 
+func TestDashboardHandler_APIApps_Create_ReservedIngressPort_ReturnsBadRequest(t *testing.T) {
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{
+		createFn: func(_ context.Context, name, composeYAML string) (*domain.App, error) {
+			return nil, domain.ErrReservedIngressPort
+		},
+	})
+
+	body := bytes.NewBufferString(`{"name":"demo","compose_yaml":"services:\n  web:\n    image: nginx:alpine\n    ports:\n      - \"80:80\""}`)
+	request := httptest.NewRequest(http.MethodPost, "/api/apps", body)
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	handler.APIApps(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, recorder.Result().StatusCode)
+	}
+}
+
 func TestDashboardHandler_APIAppDelete_Success(t *testing.T) {
 	var deletedID string
 	handler := newTestHandler(&fakeDashboardUseCase{})
@@ -491,6 +568,143 @@ func TestDashboardHandler_APIAppDelete_Success(t *testing.T) {
 	}
 	if deletedID != "app-1" {
 		t.Fatalf("expected deleted app app-1, got %q", deletedID)
+	}
+}
+
+func TestDashboardHandler_APIAppDelete_NotFound(t *testing.T) {
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{
+		deleteFn: func(_ context.Context, id string) error {
+			if id != "missing-app" {
+				t.Fatalf("expected deleted app missing-app, got %q", id)
+			}
+			return domain.ErrAppNotFound
+		},
+	})
+
+	request := httptest.NewRequest(http.MethodDelete, "/api/apps/missing-app", nil)
+	recorder := httptest.NewRecorder()
+
+	handler.APIAppRoutes(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, recorder.Result().StatusCode)
+	}
+}
+
+func TestDashboardHandler_APIAppDelete_ManualCleanupRequired(t *testing.T) {
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{
+		deleteFn: func(_ context.Context, id string) error {
+			if id != "app-1" {
+				t.Fatalf("expected deleted app app-1, got %q", id)
+			}
+			return domain.ErrManualCleanupRequired
+		},
+	})
+
+	request := httptest.NewRequest(http.MethodDelete, "/api/apps/app-1", nil)
+	recorder := httptest.NewRecorder()
+
+	handler.APIAppRoutes(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, recorder.Result().StatusCode)
+	}
+}
+
+func TestDashboardHandler_APIAppConfig_UpdateTLSWithoutEmailReturnsBadRequest(t *testing.T) {
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{
+		updateConfigFn: func(_ context.Context, id string, _ domain.AppConfig) (*domain.App, error) {
+			if id != "app-1" {
+				t.Fatalf("expected app id app-1, got %q", id)
+			}
+			return nil, domain.ErrTLSEmailRequired
+		},
+	})
+
+	body := strings.NewReader(`{"public_domain":"app.example.com","proxy_target_port":8080,"use_tls":true}`)
+	request := httptest.NewRequest(http.MethodPut, "/api/apps/app-1/config", body)
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	handler.APIAppConfig(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, recorder.Result().StatusCode)
+	}
+}
+
+func TestDashboardHandler_APIImport_Create(t *testing.T) {
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{
+		importFn: func(_ context.Context, input domain.ImportRepoInput) (*domain.App, error) {
+			if input.Name != "demo" {
+				t.Fatalf("expected name demo, got %q", input.Name)
+			}
+			if input.RepoURL != "https://github.com/example/demo.git" {
+				t.Fatalf("unexpected repo url: %q", input.RepoURL)
+			}
+			if input.Branch != "main" {
+				t.Fatalf("unexpected branch: %q", input.Branch)
+			}
+			if input.ComposePath != "docker-compose.yml" {
+				t.Fatalf("expected compose_path docker-compose.yml, got %q", input.ComposePath)
+			}
+			return &domain.App{
+				ID:         "app-1",
+				Name:       input.Name,
+				ComposeYAML: "services:\n  web:\n    image: nginx:alpine",
+				Status:     domain.AppStatusCreated,
+			}, nil
+		},
+	})
+
+	body := bytes.NewBufferString(`{
+		"name":"demo",
+		"repo_url":"https://github.com/example/demo.git",
+		"branch":"main",
+		"compose_path":"docker-compose.yml"
+	}`)
+	request := httptest.NewRequest(http.MethodPost, "/api/apps/import", body)
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	handler.APIImport(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", recorder.Result().StatusCode)
+	}
+	var payload domain.App
+	if err := json.NewDecoder(recorder.Body).Decode(&payload); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if payload.ID != "app-1" {
+		t.Fatalf("expected app id app-1, got %q", payload.ID)
+	}
+}
+
+func TestDashboardHandler_APIImport_ErrorFromUseCase(t *testing.T) {
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{
+		importFn: func(_ context.Context, _ domain.ImportRepoInput) (*domain.App, error) {
+			return nil, domain.ErrMissingDockerfile
+		},
+	})
+
+	body := bytes.NewBufferString(`{
+		"name":"demo",
+		"repo_url":"https://github.com/example/demo.git"
+	}`)
+	request := httptest.NewRequest(http.MethodPost, "/api/apps/import", body)
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	handler.APIImport(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", recorder.Result().StatusCode)
 	}
 }
 
@@ -528,5 +742,244 @@ func TestDashboardHandler_APIDeploy_Success(t *testing.T) {
 	}
 	if payload["status"] != domain.AppStatusRunning {
 		t.Fatalf("expected running status, got %+v", payload["status"])
+	}
+}
+
+func TestDashboardHandler_APISettings_Get(t *testing.T) {
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetPlatformSettingsUseCase(&fakePlatformSettingsUseCase{
+		getSettingsFn: func(context.Context) (*domain.PlatformSettings, error) {
+			return &domain.PlatformSettings{
+				AdminHost:            "127.0.0.1",
+				AdminPort:            3001,
+				AdminDomain:          "admin.example.com",
+				AdminUseTLS:          true,
+				CertbotEmail:         "ops@example.com",
+				CertbotEnabled:       true,
+				CertbotStaging:       true,
+				CertbotAutoRenew:     false,
+				CertbotTermsAccepted: true,
+			}, nil
+		},
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/api/settings", nil)
+	recorder := httptest.NewRecorder()
+	handler.APISettings(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Result().StatusCode)
+	}
+
+	var payload domain.PlatformSettings
+	if err := json.NewDecoder(recorder.Body).Decode(&payload); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if payload.AdminHost != "127.0.0.1" || payload.AdminPort != 3001 {
+		t.Fatalf("unexpected platform settings payload: %+v", payload)
+	}
+}
+
+func TestDashboardHandler_APISettings_Put(t *testing.T) {
+	var saved domain.PlatformSettings
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetPlatformSettingsUseCase(&fakePlatformSettingsUseCase{
+		updateSettingsFn: func(_ context.Context, input domain.PlatformSettings) (*domain.PlatformSettings, error) {
+			saved = input
+			return &input, nil
+		},
+	})
+
+	body := bytes.NewBufferString(`{
+		"admin_host": "0.0.0.0",
+		"admin_port": 3200,
+		"admin_domain": "admin.example.com",
+		"admin_use_tls": true,
+		"certbot_email": "ops@example.com",
+		"certbot_enabled": true,
+		"certbot_staging": false,
+		"certbot_auto_renew": true,
+		"certbot_terms_accepted": true
+	}`)
+	request := httptest.NewRequest(http.MethodPut, "/api/settings", body)
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	handler.APISettings(recorder, request)
+	if recorder.Result().StatusCode != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Result().StatusCode)
+	}
+	if saved.AdminPort != 3200 || !saved.AdminUseTLS || !saved.CertbotEnabled {
+		t.Fatalf("unexpected saved settings: %+v", saved)
+	}
+}
+
+func TestDashboardHandler_APICertbotRenew_Post(t *testing.T) {
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	renewCalled := false
+	reloadCalled := false
+	handler.certbotManager = &fakeCertbotManager{
+		renewFn: func(_ context.Context) error {
+			renewCalled = true
+			return nil
+		},
+	}
+	handler.hostManager = &fakeHostManager{
+		reloadFn: func(_ context.Context) error {
+			reloadCalled = true
+			return nil
+		},
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/api/certificates/renew", nil)
+	recorder := httptest.NewRecorder()
+	handler.APICertbotRenew(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Result().StatusCode)
+	}
+	if !renewCalled {
+		t.Fatalf("expected certbot renew to be called")
+	}
+	if !reloadCalled {
+		t.Fatalf("expected nginx reload to be called")
+	}
+}
+
+func TestDashboardHandler_APIAppConfig_GetAndUpdate(t *testing.T) {
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{
+		getFn: func(_ context.Context, id string) (*domain.App, error) {
+			if id != "app-1" {
+				t.Fatalf("expected app id app-1, got %q", id)
+			}
+			return &domain.App{
+				ID:              "app-1",
+				Name:            "demo",
+				PublicDomain:    "app.example.com",
+				ProxyTargetPort: 8080,
+				UseTLS:          true,
+				ManagedEnv: map[string]string{
+					"FOO": "bar",
+				},
+			}, nil
+		},
+		updateConfigFn: func(_ context.Context, id string, config domain.AppConfig) (*domain.App, error) {
+			if id != "app-1" {
+				t.Fatalf("expected app id app-1, got %q", id)
+			}
+			return &domain.App{
+				ID:              id,
+				Name:            "demo",
+				PublicDomain:    config.PublicDomain,
+				ProxyTargetPort: config.ProxyTargetPort,
+				UseTLS:          config.UseTLS,
+				ManagedEnv:      config.ManagedEnv,
+			}, nil
+		},
+	})
+
+	getRequest := httptest.NewRequest(http.MethodGet, "/api/apps/app-1/config", nil)
+	getRecorder := httptest.NewRecorder()
+	handler.APIAppRoutes(getRecorder, getRequest)
+	if getRecorder.Result().StatusCode != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, getRecorder.Result().StatusCode)
+	}
+	var getPayload domain.AppConfig
+	if err := json.NewDecoder(getRecorder.Body).Decode(&getPayload); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if getPayload.PublicDomain != "app.example.com" || getPayload.ProxyTargetPort != 8080 {
+		t.Fatalf("unexpected app config payload: %+v", getPayload)
+	}
+
+	putBody := bytes.NewBufferString(`{"public_domain":"landing.example.com","proxy_target_port":3000,"use_tls":false,"managed_env":{"API_URL":"https://landing"}}`)
+	putRequest := httptest.NewRequest(http.MethodPut, "/api/apps/app-1/config", putBody)
+	putRequest.Header.Set("Content-Type", "application/json")
+	putRecorder := httptest.NewRecorder()
+	handler.APIAppRoutes(putRecorder, putRequest)
+
+	if putRecorder.Result().StatusCode != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, putRecorder.Result().StatusCode)
+	}
+	var putPayload domain.AppConfig
+	if err := json.NewDecoder(putRecorder.Body).Decode(&putPayload); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if putPayload.PublicDomain != "landing.example.com" || putPayload.ProxyTargetPort != 3000 || putPayload.UseTLS != false {
+		t.Fatalf("unexpected updated app config payload: %+v", putPayload)
+	}
+}
+
+func TestDashboardHandler_APIAppConfig_Put_InvalidJSON(t *testing.T) {
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{})
+
+	request := httptest.NewRequest(http.MethodPut, "/api/apps/app-1/config", strings.NewReader(`bad-json`))
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	handler.APIAppRoutes(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, recorder.Result().StatusCode)
+	}
+}
+
+func TestDashboardHandler_APIAppConfig_Get_NotFound(t *testing.T) {
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{
+		getFn: func(_ context.Context, id string) (*domain.App, error) {
+			if id != "missing" {
+				t.Fatalf("expected app id missing, got %q", id)
+			}
+			return nil, domain.ErrAppNotFound
+		},
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/api/apps/missing/config", nil)
+	recorder := httptest.NewRecorder()
+	handler.APIAppRoutes(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, recorder.Result().StatusCode)
+	}
+}
+
+func TestDashboardHandler_APIAppConfig_Put_ReturnsBadRequestOnDomainError(t *testing.T) {
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{
+		updateConfigFn: func(_ context.Context, id string, config domain.AppConfig) (*domain.App, error) {
+			if id != "app-1" {
+				t.Fatalf("expected app id app-1, got %q", id)
+			}
+			if config.PublicDomain == "" {
+				t.Fatalf("expected public domain to be provided")
+			}
+			return nil, domain.ErrInvalidDomain
+		},
+	})
+
+	putBody := strings.NewReader(`{"public_domain":"bad_domain","proxy_target_port":8080}`)
+	request := httptest.NewRequest(http.MethodPut, "/api/apps/app-1/config", putBody)
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	handler.APIAppRoutes(recorder, request)
+	if recorder.Result().StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, recorder.Result().StatusCode)
+	}
+}
+
+func TestDashboardHandler_APIAppConfig_MethodNotAllowed(t *testing.T) {
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{})
+	request := httptest.NewRequest(http.MethodPatch, "/api/apps/app-1/config", nil)
+	recorder := httptest.NewRecorder()
+
+	handler.APIAppRoutes(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, recorder.Result().StatusCode)
 	}
 }

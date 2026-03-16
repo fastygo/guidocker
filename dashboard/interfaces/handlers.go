@@ -1,6 +1,7 @@
 package interfaces
 
 import (
+	"context"
 	"dashboard/domain"
 	"dashboard/views"
 	"encoding/json"
@@ -16,8 +17,19 @@ type DashboardHandler struct {
 	dashboardUseCase domain.DashboardUseCase
 	appUseCase       domain.AppUseCase
 	scanUseCase      domain.ScannerUseCase
+	platformSettingsUseCase domain.PlatformSettingsUseCase
+	certbotManager   certbotManager
+	hostManager      certReloadManager
 	loginHandler     http.HandlerFunc
 	renderer         *views.Renderer
+}
+
+type certbotManager interface {
+	RenewCertificates(context.Context) error
+}
+
+type certReloadManager interface {
+	ReloadRouting(context.Context) error
 }
 
 // NewDashboardHandler creates a new dashboard handler
@@ -129,6 +141,11 @@ func composePaasToView(app *domain.App) views.ComposeView {
 	name := ""
 	appID := ""
 	composeYAML := defaultComposeYAML()
+	sourceType := string(domain.SourceTypeManual)
+	repoURL := ""
+	repoBranch := ""
+	composePath := ""
+	appPort := 0
 
 	if app != nil {
 		title = "Edit application"
@@ -137,6 +154,11 @@ func composePaasToView(app *domain.App) views.ComposeView {
 		name = app.Name
 		appID = app.ID
 		composeYAML = app.ComposeYAML
+		sourceType = string(app.SourceType)
+		repoURL = app.RepoURL
+		repoBranch = app.RepoBranch
+		composePath = app.ComposePath
+		appPort = app.AppPort
 	}
 
 	appIDJS := template.JS("null")
@@ -155,6 +177,11 @@ func composePaasToView(app *domain.App) views.ComposeView {
 		Subtitle:    subtitle,
 		Name:        name,
 		ComposeYAML: composeYAML,
+		SourceType:  sourceType,
+		RepoURL:     repoURL,
+		RepoBranch:  repoBranch,
+		ComposePath: composePath,
+		AppPort:     appPort,
 		ActionLabel: actionLabel,
 		AppID:       appID,
 		AppIDJS:     appIDJS,
@@ -182,6 +209,16 @@ func (h *DashboardHandler) SetAppUseCase(useCase domain.AppUseCase) {
 // SetScanUseCase attaches the scanner use case to the handler.
 func (h *DashboardHandler) SetScanUseCase(useCase domain.ScannerUseCase) {
 	h.scanUseCase = useCase
+}
+
+// SetPlatformSettingsUseCase attaches platform-level settings use case.
+func (h *DashboardHandler) SetPlatformSettingsUseCase(useCase domain.PlatformSettingsUseCase) {
+	h.platformSettingsUseCase = useCase
+}
+
+func (h *DashboardHandler) SetCertificateOperations(renewManager certbotManager, hostManager certReloadManager) {
+	h.certbotManager = renewManager
+	h.hostManager = hostManager
 }
 
 // SetLoginHandler attaches a dedicated login handler.

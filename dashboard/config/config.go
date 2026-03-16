@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 )
 
 // Config holds application configuration
@@ -12,6 +13,7 @@ type Config struct {
 	Data   DataConfig
 	Auth   AuthConfig
 	Stacks StacksConfig
+	Import RepoImportConfig
 }
 
 // ServerConfig holds server-related configuration
@@ -38,6 +40,11 @@ type StacksConfig struct {
 	DBFile string
 }
 
+type RepoImportConfig struct {
+	Timeout  time.Duration
+	TempPath string
+}
+
 // Load loads configuration from environment variables with defaults
 func Load() *Config {
 	stacksDir := getEnv("STACKS_DIR", "/opt/stacks")
@@ -59,6 +66,10 @@ func Load() *Config {
 			Dir:    stacksDir,
 			DBFile: getEnv("BOLT_DB_FILE", filepath.Join(stacksDir, ".paas.db")),
 		},
+	Import: RepoImportConfig{
+		Timeout:  getEnvAsDuration("REPO_IMPORT_TIMEOUT_SECONDS", 300*time.Second),
+		TempPath: getEnv("REPO_IMPORT_TEMP_PATH", ".tmp"),
+	},
 	}
 }
 
@@ -108,4 +119,18 @@ func getEnvAsBoolAny(keys []string, fallback bool) bool {
 	}
 
 	return fallback
+}
+
+func getEnvAsDuration(key string, fallback time.Duration) time.Duration {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+
+	seconds, err := strconv.Atoi(value)
+	if err != nil || seconds <= 0 {
+		return fallback
+	}
+
+	return time.Duration(seconds) * time.Second
 }

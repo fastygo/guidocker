@@ -7,9 +7,12 @@ import (
 	"dashboard/infrastructure"
 	boltrepo "dashboard/infrastructure/bolt"
 	dockerrepo "dashboard/infrastructure/docker"
+	gitrepo "dashboard/infrastructure/git"
+	"dashboard/infrastructure/hosting"
 	"dashboard/interfaces"
 	"dashboard/interfaces/middleware"
 	appusecase "dashboard/usecase/app"
+	settingsusecase "dashboard/usecase/settings"
 	scanusecase "dashboard/usecase/scanner"
 	"dashboard/views"
 	"fmt"
@@ -51,11 +54,21 @@ func resolvePortIfFree(port int) (int, error) {
 	return port, nil
 }
 
-func buildServer(cfg *config.Config, useCase domain.DashboardUseCase, appUseCase domain.AppUseCase, scanUseCase domain.ScannerUseCase, auth *middleware.SessionAuth, renderer *views.Renderer) *http.Server {
+func buildServer(
+	cfg *config.Config,
+	useCase domain.DashboardUseCase,
+	appUseCase domain.AppUseCase,
+	scanUseCase domain.ScannerUseCase,
+	platformSettingsUseCase domain.PlatformSettingsUseCase,
+	auth *middleware.SessionAuth,
+	renderer *views.Renderer,
+) *http.Server {
 	mux := http.NewServeMux()
 	handler := interfaces.NewDashboardHandler(useCase, renderer)
 	handler.SetAppUseCase(appUseCase)
 	handler.SetScanUseCase(scanUseCase)
+	handler.SetPlatformSettingsUseCase(platformSettingsUseCase)
+	handler.SetCertificateOperations(hosting.NewCertbotManager(), hosting.NewNginxHostManager())
 	handler.SetLoginHandler(auth.LoginHandler())
 
 	interfaces.RegisterRoutes(mux, handler)
@@ -89,7 +102,35 @@ func main() {
 	}()
 
 	dockerRepository := dockerrepo.NewDockerRepository(cfg.Stacks.Dir)
-	appService := appusecase.NewAppService(appRepo, dockerRepository, cfg.Stacks.Dir)
+	if err := dockerRepository.EnsureNetwork(context.Background()); err != nil {
+		log.Fatalf("❌ Failed to ensure app network: %v", err)
+	}
+	gitRepository := gitrepo.NewGitRepository()
+	platformSettingsRepository, err := boltrepo.NewPlatformSettingsRepository(cfg.Stacks.DBFile)
+	if err != nil {
+		log.Fatalf("❌ Failed to initialize platform settings repository: %v", err)
+	}
+	defer func() {
+		if closeErr := platformSettingsRepository.Close(); closeErr != nil {
+			log.Printf("⚠️  Failed to close platform settings repository: %v", closeErr)
+		}
+	}()
+
+	platformSettingsService := settingsusecase.NewPlatformSettingsService(platformSettingsRepository, domain.DefaultPlatformSettings())
+	if platformSettings, err := platformSettingsService.GetPlatformSettings(context.Background()); err != nil {
+		log.Printf("⚠️  Failed to load platform settings: %v", err)
+	} else {
+		log.Printf("🧭 Platform settings loaded: host=%q port=%d domain=%q tls=%v", platformSettings.AdminHost, platformSettings.AdminPort, platformSettings.AdminDomain, platformSettings.AdminUseTLS)
+	}
+
+	appService := appusecase.NewAppService(appRepo, dockerRepository, gitRepository, cfg.Stacks.Dir).
+		WithImportTimeout(cfg.Import.Timeout).
+		WithImportTempPath(cfg.Import.TempPath).
+		WithPlatformSettingsUseCase(platformSettingsService).
+		WithHostManagers(
+			hosting.NewNginxHostManager(),
+			hosting.NewCertbotManager(),
+		)
 	auth := middleware.NewSessionAuth(cfg.Auth.AdminUser, cfg.Auth.AdminPass)
 	freePort, err := resolvePort(cfg.Server.Port)
 	if err != nil {
@@ -107,7 +148,7 @@ func main() {
 	}
 
 	scanService := scanusecase.NewScannerService(dockerRepository, appRepo, cfg.Stacks.Dir)
-	server := buildServer(cfg, service, appService, scanService, auth, renderer)
+	server := buildServer(cfg, service, appService, scanService, platformSettingsService, auth, renderer)
 
 	// Start server in goroutine
 	go func() {

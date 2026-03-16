@@ -17,6 +17,7 @@ type DashboardUseCase interface {
 type AppUseCase interface {
 	CreateApp(ctx context.Context, name, composeYAML string) (*App, error)
 	UpdateApp(ctx context.Context, id, name, composeYAML string) (*App, error)
+	UpdateAppConfig(ctx context.Context, id string, config AppConfig) (*App, error)
 	DeleteApp(ctx context.Context, id string) error
 	GetApp(ctx context.Context, id string) (*App, error)
 	ListApps(ctx context.Context) ([]*App, error)
@@ -24,7 +25,29 @@ type AppUseCase interface {
 	StopApp(ctx context.Context, id string) error
 	RestartApp(ctx context.Context, id string) error
 	GetAppStatus(ctx context.Context, id string) (string, error)
-	GetAppLogs(ctx context.Context, id string, lines int) (string, error)
+	GetAppLogs(ctx context.Context, app *App, lines int) (string, error)
+	ImportRepo(ctx context.Context, input ImportRepoInput) (*App, error)
+}
+
+type ImportRepoInput struct {
+	Name        string `json:"name"`
+	RepoURL     string `json:"repo_url"`
+	Branch      string `json:"branch"`
+	ComposePath string `json:"compose_path"`
+	AppPort     int    `json:"app_port"`
+	AutoDeploy  bool   `json:"auto_deploy"`
+}
+
+type AppConfig struct {
+	PublicDomain    string            `json:"public_domain"`
+	ProxyTargetPort int               `json:"proxy_target_port"`
+	ManagedEnv      map[string]string `json:"managed_env"`
+	UseTLS          bool              `json:"use_tls"`
+}
+
+type PlatformSettingsUseCase interface {
+	GetPlatformSettings(ctx context.Context) (*PlatformSettings, error)
+	UpdatePlatformSettings(ctx context.Context, settings PlatformSettings) (*PlatformSettings, error)
 }
 
 // ScannerUseCase defines scanner/business logic for auditing Docker resources.

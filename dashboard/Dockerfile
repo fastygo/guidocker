@@ -19,7 +19,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     gnupg \
-    tzdata && \
+    iproute2 \
+    git \
+    tzdata \
+    netcat-openbsd && \
     rm -rf /var/lib/apt/lists/*
 
 RUN install -m 0755 -d /etc/apt/keyrings && \
@@ -42,6 +45,7 @@ RUN if getent group docker >/dev/null 2>&1; then \
 WORKDIR /app
 
 COPY --from=builder /out/dashboard /usr/local/bin/dashboard
+COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 COPY data ./data
 COPY --from=builder /src/static ./static
 
@@ -60,6 +64,6 @@ EXPOSE 3000
 HEALTHCHECK --interval=15s --timeout=5s --start-period=5s --retries=3 \
     CMD curl -sf http://localhost:3000/ || exit 1
 
-USER paas
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-ENTRYPOINT ["/usr/local/bin/dashboard"]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]

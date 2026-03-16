@@ -109,13 +109,21 @@ docker-build:
 
 docker-run:
 	mkdir -p $(STACKS_DIR)
+	docker network inspect paas-network >/dev/null 2>&1 || docker network create paas-network
 	docker run -d \
 		--name $(CONTAINER_NAME) \
 		--restart unless-stopped \
 		--group-add $(DOCKER_GID) \
+		--pid host \
+		--network paas-network \
 		-p $(PAAS_PORT):3000 \
 		-v /var/run/docker.sock:/var/run/docker.sock \
+		-v /:/host \
 		-v $(STACKS_DIR):/opt/stacks \
+		-v /etc/nginx:/etc/nginx \
+		-v /etc/letsencrypt:/etc/letsencrypt \
+		-v /var/lib/letsencrypt:/var/lib/letsencrypt \
+		-v /var/log/letsencrypt:/var/log/letsencrypt \
 		-e SERVER_HOST=0.0.0.0 \
 		-e PAAS_PORT=3000 \
 		-e PAAS_ADMIN_USER=$(PAAS_ADMIN_USER) \
@@ -123,6 +131,11 @@ docker-run:
 		-e DASHBOARD_AUTH_DISABLED=$(DASHBOARD_AUTH_DISABLED) \
 		-e STACKS_DIR=/opt/stacks \
 		-e BOLT_DB_FILE=/opt/stacks/.paas.db \
+		-e PAAS_APP_NETWORK=paas-network \
+		-e PAAS_HOST_ROOT=/host \
+		-e PAAS_NGINX_BINARY=/usr/sbin/nginx \
+		-e PAAS_NGINX_SITES_DIR=/etc/nginx/conf.d \
+		-e PAAS_CERTBOT_BINARY=/usr/bin/certbot \
 		$(IMAGE)
 
 docker-run-auto:

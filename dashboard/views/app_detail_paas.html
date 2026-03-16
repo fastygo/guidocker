@@ -15,6 +15,27 @@
 			<p class="text-sm text-muted-foreground">Updated: {{.UpdatedAt}}</p>
 		</div>
 		<div class="rounded border border-border bg-card p-4 space-y-3">
+			<div class="font-semibold">Public access</div>
+			<label class="block text-sm text-muted-foreground">Public domain
+				<input id="app-public-domain" type="text" class="mt-1 w-full rounded border border-border bg-background px-2 py-2 text-sm" placeholder="app.example.com" />
+			</label>
+			<p class="text-xs text-muted-foreground">Traffic starts as HTTP by default on the configured domain.</p>
+			<label class="block text-sm text-muted-foreground">Proxy target port
+				<input id="app-proxy-target-port" type="number" min="1" max="65535" class="mt-1 w-full rounded border border-border bg-background px-2 py-2 text-sm" placeholder="3000" />
+			</label>
+			<p class="text-xs text-muted-foreground">Use the internal container port that the host nginx proxy should target on the managed Docker network.</p>
+			<label class="flex items-center gap-2 text-sm">
+				<input id="app-use-tls" type="checkbox" />
+				<span>Enable HTTPS on proxy</span>
+			</label>
+			<p class="text-xs text-muted-foreground">Enable HTTPS only after valid Let's Encrypt settings are configured; otherwise the app remains available on HTTP.</p>
+			<label class="block text-sm text-muted-foreground">Managed environment variables
+				<textarea id="app-managed-env" class="mt-1 w-full rounded border border-border bg-background p-2 text-sm" rows="6" placeholder="KEY=value\nANOTHER=value"></textarea>
+			</label>
+			<button type="button" class="px-3 py-2 rounded border border-border text-sm" onclick="saveAppConfig()">Save app settings</button>
+			<div id="app-config-feedback" class="text-sm text-muted-foreground"></div>
+		</div>
+		<div class="rounded border border-border bg-card p-4 space-y-3">
 			<div class="font-semibold">Actions</div>
 			<div class="flex flex-wrap gap-2">
 				<button class="px-3 py-2 rounded border border-border text-sm" onclick="runAppAction('deploy')">Deploy</button>
@@ -62,5 +83,76 @@
 
 		window.location.href = '/apps';
 	}
+</script>
+<script>
+	function renderManagedEnv(env) {
+		if (!env || typeof env !== 'object') return '';
+		return Object.entries(env).map(([key, value]) => `${key}=${value}`).join('\n');
+	}
+
+	function parseManagedEnv(text) {
+		const values = {};
+		const lines = text.split('\n');
+		for (const raw of lines) {
+			const line = raw.trim();
+			if (!line || line.startsWith('#')) continue;
+			const separator = line.indexOf('=');
+			if (separator <= 0) continue;
+			const key = line.slice(0, separator).trim();
+			const value = line.slice(separator + 1).trim();
+			if (!key) continue;
+			values[key] = value;
+		}
+		return values;
+	}
+
+	async function loadAppConfig() {
+		const response = await fetch('/api/apps/' + encodeURIComponent('{{.ID}}') + '/config', { method: 'GET' });
+		const payload = await response.json().catch(() => ({}));
+		if (!response.ok) {
+			console.warn('Failed to load app config', payload);
+			return;
+		}
+
+		const domainNode = document.getElementById('app-public-domain');
+		const portNode = document.getElementById('app-proxy-target-port');
+		const tlsNode = document.getElementById('app-use-tls');
+		const envNode = document.getElementById('app-managed-env');
+		if (domainNode) domainNode.value = payload.public_domain || '';
+		if (portNode) portNode.value = payload.proxy_target_port ? String(payload.proxy_target_port) : '';
+		if (tlsNode) tlsNode.checked = !!payload.use_tls;
+		if (envNode) envNode.value = renderManagedEnv(payload.managed_env || {});
+	}
+
+	async function saveAppConfig() {
+		const feedback = document.getElementById('app-config-feedback');
+		if (feedback) feedback.textContent = 'Saving app settings...';
+
+		const domainNode = document.getElementById('app-public-domain');
+		const portNode = document.getElementById('app-proxy-target-port');
+		const tlsNode = document.getElementById('app-use-tls');
+		const envNode = document.getElementById('app-managed-env');
+		const request = {
+			public_domain: domainNode ? domainNode.value.trim() : '',
+			proxy_target_port: portNode ? (Number.parseInt(portNode.value, 10) || 0) : 0,
+			use_tls: tlsNode ? !!tlsNode.checked : false,
+			managed_env: parseManagedEnv(envNode ? envNode.value : ''),
+		};
+
+		const response = await fetch('/api/apps/' + encodeURIComponent('{{.ID}}') + '/config', {
+			method: 'PUT',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(request),
+		});
+		const payload = await response.json().catch(() => ({}));
+		if (!response.ok) {
+			if (feedback) feedback.textContent = payload.error || 'Failed to save app settings';
+			return;
+		}
+		if (feedback) feedback.textContent = 'App settings saved';
+		await loadAppConfig();
+	}
+
+	document.addEventListener('DOMContentLoaded', loadAppConfig);
 </script>
 {{end}}
