@@ -162,6 +162,14 @@ Update
 
 ```bash
 git pull origin main
+
+git fetch origin current
+git reset --hard origin/current
+
+docker ps
+
+docker stop gui-docker
+docker rm gui-docker
 ```
 
 Or use Make with auto GID detection:
