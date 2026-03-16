@@ -161,18 +161,26 @@ make docker-run IMAGE_NAME=paas-dashboard IMAGE_TAG=latest \
   `/etc/nginx`, `/etc/letsencrypt`, `/var/lib/letsencrypt`, `/var/log/letsencrypt`
 - Keep host ports `80` and `443` free for host-installed `nginx`
 - Create `paas-network` before starting the dashboard container
+- Disable the default Docker AppArmor profile for this container: `--security-opt apparmor=unconfined`
+- Use host user namespaces so host `nginx` reload works: `--userns host`
 - Use `make docker-run-auto` on Linux for automatic host docker GID detection
+- Ensure host `/etc/resolv.conf` points to real upstream DNS servers, not the `127.0.0.53` systemd stub, otherwise `certbot` inside `chroot /host` can fail to resolve Let's Encrypt
 
 **Example:**
 
 ```bash
 docker network inspect paas-network >/dev/null 2>&1 || docker network create paas-network
 
+docker rm -f dashboard 2>/dev/null || true
+
 docker run -d \
   --name dashboard \
+  --user root \
+  --userns host \
+  --pid host \
+  --security-opt apparmor=unconfined \
   --restart unless-stopped \
   --group-add "$(getent group docker | cut -d: -f3)" \
-  --pid host \
   --network paas-network \
   -p 3000:3000 \
   -v /var/run/docker.sock:/var/run/docker.sock \
@@ -182,28 +190,27 @@ docker run -d \
   -v /etc/letsencrypt:/etc/letsencrypt \
   -v /var/lib/letsencrypt:/var/lib/letsencrypt \
   -v /var/log/letsencrypt:/var/log/letsencrypt \
-  --env SERVER_HOST=0.0.0.0 \
-  --env PAAS_PORT=3000 \
-  --env PAAS_ADMIN_USER=admin \
-  --env PAAS_ADMIN_PASS=admin@123 \
-  --env STACKS_DIR=/opt/stacks \
-  --env BOLT_DB_FILE=/opt/stacks/.paas.db \
-  --env PAAS_APP_NETWORK=paas-network \
-  --env PAAS_HOST_ROOT=/host \
-  --env PAAS_NGINX_BINARY=/usr/sbin/nginx \
-  --env PAAS_NGINX_SITES_DIR=/etc/nginx/conf.d \
-  --env PAAS_CERTBOT_BINARY=/usr/bin/certbot \
+  -e SERVER_HOST=0.0.0.0 \
+  -e PAAS_PORT=3000 \
+  -e PAAS_ADMIN_USER=admin \
+  -e PAAS_ADMIN_PASS=admin@123 \
+  -e STACKS_DIR=/opt/stacks \
+  -e BOLT_DB_FILE=/opt/stacks/.paas.db \
+  -e PAAS_APP_NETWORK=paas-network \
+  -e PAAS_HOST_ROOT=/host \
+  -e PAAS_NGINX_BINARY=/usr/sbin/nginx \
+  -e PAAS_NGINX_SITES_DIR=/etc/nginx/conf.d \
+  -e PAAS_CERTBOT_BINARY=/usr/bin/certbot \
   paas-dashboard:latest
 ```
 
 **Post-start checklist:**
 
 ```bash
-docker network inspect paas-network >/dev/null
-docker inspect dashboard --format '{{json .HostConfig.NetworkMode}}'
-docker inspect dashboard --format '{{json .HostConfig.PidMode}}'
+docker inspect dashboard --format '{{json .HostConfig.UsernsMode}}'
+docker inspect dashboard --format '{{json .HostConfig.SecurityOpt}}'
 docker exec dashboard chroot /host /usr/sbin/nginx -t
-docker exec dashboard chroot /host /usr/bin/certbot --version
+docker exec dashboard chroot /host getent hosts acme-v02.api.letsencrypt.org
 docker logs --tail 80 dashboard
 ```
 
@@ -211,10 +218,14 @@ Expected result:
 
 - `paas-network` exists
 - dashboard runs on `paas-network`
+- dashboard uses host user namespaces
 - dashboard shares the host PID namespace
+- AppArmor is disabled for this controller container
 - host `nginx -t` succeeds through the controller container
-- host `certbot` is reachable through the controller container
+- host `certbot` can resolve and reach Let's Encrypt through the controller container
 - dashboard logs show normal startup without ingress validation failures
+
+If `docker exec dashboard chroot /host getent hosts acme-v02.api.letsencrypt.org` fails, fix host DNS before enabling TLS for an app. On Ubuntu with `systemd-resolved`, prefer `/run/systemd/resolve/resolv.conf` instead of the `127.0.0.53` stub symlink for `/etc/resolv.conf`.
 
 **Operator note:**
 
