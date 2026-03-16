@@ -165,6 +165,35 @@ cd guidocker/gui-docker
 make docker-run-auto PAAS_ADMIN_USER=admin PAAS_ADMIN_PASS='admin@123'
 ```
 
+### Update admin panel from git origin
+
+Step-by-step process to pull the latest code and redeploy:
+
+```bash
+# 1. Go to the repository root
+cd guidocker
+
+# 2. Pull latest changes from origin
+git pull origin main
+
+# 3. Stop the running container
+make -C gui-docker docker-stop
+
+# 4. Rebuild the Docker image
+make -C gui-docker docker-build
+
+# 5. Start the container again (with your preferred env vars)
+make -C gui-docker docker-run-auto PAAS_ADMIN_USER=admin PAAS_ADMIN_PASS='admin@123'
+```
+
+Or as a one-liner from the repo root:
+
+```bash
+git pull origin main && make -C gui-docker docker-stop docker-build docker-run-auto PAAS_ADMIN_USER=admin PAAS_ADMIN_PASS='admin@123'
+```
+
+> **Note:** If your default branch is `master`, replace `main` with `master`. The `stacks` volume is preserved across updates; only the container image is replaced.
+
 ## Development
 
 ### Prerequisites
