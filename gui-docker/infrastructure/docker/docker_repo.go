@@ -12,8 +12,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-
-	"gopkg.in/yaml.v3"
 )
 
 // Repository executes Docker Compose commands through the Docker CLI.
@@ -626,27 +624,57 @@ type dockerInspectPortBinding struct {
 }
 
 func serviceNamesFromCompose(raw string) ([]string, error) {
-	var payload struct {
-		Services map[string]any `yaml:"services"`
-	}
-	if err := yaml.Unmarshal([]byte(raw), &payload); err != nil {
-		return nil, fmt.Errorf("%w: parse compose services: %v", domain.ErrInvalidComposeYAML, err)
-	}
-	if len(payload.Services) == 0 {
-		return nil, domain.ErrComposeNoServices
-	}
-	names := make([]string, 0, len(payload.Services))
-	for name := range payload.Services {
-		trimmed := strings.TrimSpace(name)
-		if trimmed == "" {
+	lines := strings.Split(raw, "\n")
+	inServices := false
+	servicesIndent := -1
+	serviceIndent := -1
+	names := make([]string, 0)
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
-		names = append(names, trimmed)
+
+		indent := len(line) - len(strings.TrimLeft(line, " "))
+		if !inServices {
+			if indent == 0 && trimmed == "services:" {
+				inServices = true
+				servicesIndent = indent
+			}
+			continue
+		}
+
+		if indent <= servicesIndent {
+			break
+		}
+		if strings.HasPrefix(trimmed, "-") || !strings.HasSuffix(trimmed, ":") {
+			continue
+		}
+
+		name := strings.TrimSpace(strings.TrimSuffix(trimmed, ":"))
+		if name == "" {
+			continue
+		}
+		if strings.Contains(name, " ") {
+			continue
+		}
+
+		if serviceIndent == -1 {
+			serviceIndent = indent
+		}
+		if indent != serviceIndent {
+			continue
+		}
+
+		names = append(names, name)
 	}
-	sort.Strings(names)
-	if len(names) == 0 {
+
+	if !inServices || len(names) == 0 {
 		return nil, domain.ErrComposeNoServices
 	}
+
+	sort.Strings(names)
 	return names, nil
 }
 

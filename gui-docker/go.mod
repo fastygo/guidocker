@@ -5,7 +5,6 @@ go 1.21
 require (
 	github.com/a-h/templ v0.0.0
 	go.etcd.io/bbolt v1.4.3
-	gopkg.in/yaml.v3 v3.0.1
 	ui8kit v0.0.0
 )
 
