@@ -1,0 +1,51 @@
+package pages
+
+import kitlayout "ui8kit/layout"
+
+templ OverviewPage(data OverviewView) {
+	@kitlayout.Shell(kitlayout.ShellProps{Title: data.Title, Active: data.Active, NavItems: NavigationItems()}, OverviewContent(data))
+}
+
+templ OverviewContent(data OverviewView) {
+	<section class="space-y-4">
+		<div class="text-sm text-muted-foreground">{ data.Subtitle }</div>
+		<div class="text-2xl font-semibold">Overview</div>
+		<div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+			<article class="card card-content"><div class="text-sm text-muted-foreground">Total Containers</div><p class="mt-2 text-3xl font-semibold">{ data.Stats.TotalContainers }</p></article>
+			<article class="card card-content"><div class="text-sm text-muted-foreground">Running</div><p class="mt-2 text-3xl font-semibold">{ data.Stats.RunningContainers }</p></article>
+			<article class="card card-content"><div class="text-sm text-muted-foreground">Stopped</div><p class="mt-2 text-3xl font-semibold">{ data.Stats.StoppedContainers }</p></article>
+			<article class="card card-content"><div class="text-sm text-muted-foreground">Paused</div><p class="mt-2 text-3xl font-semibold">{ data.Stats.PausedContainers }</p></article>
+		</div>
+		<div class="card">
+			<div class="card-header"><div class="card-title">Recent containers</div></div>
+			<div class="overflow-x-auto">
+				<table class="w-full">
+					<thead class="bg-muted">
+						<tr>
+							<th class="min-w-0 px-4 py-2 text-left text-xs font-semibold text-muted-foreground">Name</th>
+							<th class="min-w-0 px-4 py-2 text-left text-xs font-semibold text-muted-foreground">Image</th>
+							<th class="min-w-0 px-4 py-2 text-left text-xs font-semibold text-muted-foreground">Status</th>
+							<th class="min-w-0 px-4 py-2 text-left text-xs font-semibold text-muted-foreground">Ports</th>
+							<th class="min-w-0 px-4 py-2 text-left text-xs font-semibold text-muted-foreground">CPU</th>
+							<th class="min-w-0 px-4 py-2 text-left text-xs font-semibold text-muted-foreground">Memory</th>
+							<th class="px-4 py-2 text-left text-xs font-semibold text-muted-foreground">Actions</th>
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-border">
+						for _, container := range data.Containers {
+							<tr>
+								<td class="min-w-0 px-4 py-2 text-sm font-medium"><a href={ "/apps/" + container.ID } class="block truncate">{ container.Name }</a></td>
+								<td class="min-w-0 truncate px-4 py-2 text-sm text-muted-foreground">{ container.Image }</td>
+								<td class="min-w-0 truncate px-4 py-2 text-sm">@StatusBadge(container.Status)</td>
+								<td class="min-w-0 truncate px-4 py-2 text-sm text-muted-foreground">{ container.PortsStr }</td>
+								<td class="min-w-0 truncate px-4 py-2 text-sm text-muted-foreground">{ container.CPUPercent }</td>
+								<td class="min-w-0 truncate px-4 py-2 text-sm text-muted-foreground">{ container.MemoryMB }</td>
+								<td class="min-w-0 px-4 py-2 text-sm">@ContainerActions(container.ID, container.Status)</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		</div>
+	</section>
+}

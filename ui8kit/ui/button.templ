@@ -1,0 +1,40 @@
+package ui
+
+import (
+	"strings"
+	"ui8kit/utils"
+)
+
+type ButtonProps struct {
+	utils.UtilityProps
+	Variant  string
+	Size     string
+	Href     string
+	Class    string
+	Type     string
+	Disabled bool
+	OnClick  string
+}
+
+func (p ButtonProps) classes() string {
+	state := ""
+	if p.Disabled {
+		state = "pointer-events-none opacity-50"
+	}
+	return utils.Cn(utils.ButtonStyleVariant(p.Variant), utils.ButtonSizeVariant(p.Size), p.UtilityProps.Resolve(), state, p.Class)
+}
+
+func (p ButtonProps) buttonType() string {
+	if strings.TrimSpace(p.Type) == "" {
+		return "button"
+	}
+	return p.Type
+}
+
+templ Button(props ButtonProps, label string) {
+	if strings.TrimSpace(props.Href) != "" {
+		<a href={ props.Href } class={ props.classes() } onclick={ props.OnClick }>{ label }</a>
+	} else {
+		<button type={ props.buttonType() } class={ props.classes() } onclick={ props.OnClick } if props.Disabled { disabled }>{ label }</button>
+	}
+}

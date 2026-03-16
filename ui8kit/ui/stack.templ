@@ -1,0 +1,22 @@
+package ui
+
+import (
+	"github.com/a-h/templ"
+	"ui8kit/utils"
+)
+
+type StackProps struct {
+	utils.UtilityProps
+	Class string
+	Tag   string
+}
+
+func (p StackProps) classes() string {
+	return utils.Cn("flex flex-col gap-4 items-start justify-start", p.UtilityProps.Resolve(), p.Class)
+}
+
+templ Stack(props StackProps, children templ.Component) {
+	<div class={ props.classes() }>
+		@children
+	</div>
+}

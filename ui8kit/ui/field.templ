@@ -1,0 +1,59 @@
+package ui
+
+import "ui8kit/utils"
+
+type FieldOption struct {
+	Value string
+	Label string
+}
+
+type FieldProps struct {
+	utils.UtilityProps
+	Class       string
+	Variant     string
+	Size        string
+	Type        string
+	Name        string
+	ID          string
+	Placeholder string
+	Value       string
+	Rows        int
+	Min         string
+	Max         string
+	Checked     bool
+	Disabled    bool
+	Component   string
+	Options     []FieldOption
+}
+
+func (p FieldProps) classes() string {
+	return utils.Cn(utils.FieldVariant(p.Variant), utils.FieldSizeVariant(p.Size), p.UtilityProps.Resolve(), p.Class)
+}
+
+func (p FieldProps) rows() int {
+	if p.Rows <= 0 {
+		return 4
+	}
+	return p.Rows
+}
+
+func (p FieldProps) inputType() string {
+	if p.Type == "" {
+		return "text"
+	}
+	return p.Type
+}
+
+templ Field(props FieldProps) {
+	if props.Component == "textarea" {
+		<textarea id={ props.ID } name={ props.Name } class={ props.classes() } placeholder={ props.Placeholder } rows={ props.rows() } if props.Disabled { disabled }>{ props.Value }</textarea>
+	} else if props.Component == "select" {
+		<select id={ props.ID } name={ props.Name } class={ props.classes() } if props.Disabled { disabled }>
+			for _, option := range props.Options {
+				<option value={ option.Value } if option.Value == props.Value { selected }>{ option.Label }</option>
+			}
+		</select>
+	} else {
+		<input id={ props.ID } name={ props.Name } type={ props.inputType() } class={ props.classes() } placeholder={ props.Placeholder } value={ props.Value } min={ props.Min } max={ props.Max } if props.Checked { checked } if props.Disabled { disabled }/>
+	}
+}

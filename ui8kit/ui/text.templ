@@ -1,0 +1,24 @@
+package ui
+
+import "ui8kit/utils"
+
+type TextProps struct {
+	utils.UtilityProps
+	Class         string
+	Tag           string
+	FontSize      string
+	FontWeight    string
+	LineHeight    string
+	LetterSpacing string
+	TextColor     string
+	TextAlign     string
+	Truncate      bool
+}
+
+func (p TextProps) classes() string {
+	return utils.Cn(utils.TypographyClasses(p.FontSize, p.FontWeight, p.LineHeight, p.LetterSpacing, p.TextColor, p.TextAlign, p.Truncate), p.UtilityProps.Resolve(), p.Class)
+}
+
+templ Text(props TextProps, value string) {
+	<p class={ props.classes() }>{ value }</p>
+}

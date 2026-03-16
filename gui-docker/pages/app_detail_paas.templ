@@ -1,0 +1,144 @@
+package pages
+
+import (
+	"github.com/a-h/templ"
+	kitlayout "ui8kit/layout"
+)
+
+const appDetailPaasScript = `function appId() {
+  const root = document.getElementById('app-detail-root');
+  return root ? root.dataset.appId || '' : '';
+}
+async function runAppAction(action) {
+  const feedback = document.getElementById('app-feedback');
+  const id = appId();
+  if (feedback) feedback.textContent = 'Running ' + action + '...';
+  const response = await fetch('/api/apps/' + encodeURIComponent(id) + '/' + action, { method: 'POST' });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    if (feedback) feedback.textContent = payload.error || 'Action failed';
+    return;
+  }
+  window.location.reload();
+}
+async function deleteApp() {
+  if (!confirm('Delete this application? All containers, volumes, and files will be permanently removed.')) return;
+  const feedback = document.getElementById('app-feedback');
+  const id = appId();
+  if (feedback) feedback.textContent = 'Deleting...';
+  const response = await fetch('/api/apps/' + encodeURIComponent(id), { method: 'DELETE' });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    if (feedback) feedback.textContent = payload.error || 'Delete failed';
+    return;
+  }
+  window.location.href = '/apps';
+}
+function renderManagedEnv(env) {
+  if (!env || typeof env !== 'object') return '';
+  return Object.entries(env).map(([key, value]) => key + '=' + value).join('
+');
+}
+function parseManagedEnv(text) {
+  const values = {};
+  const lines = text.split('
+');
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    const separator = line.indexOf('=');
+    if (separator <= 0) continue;
+    const key = line.slice(0, separator).trim();
+    const value = line.slice(separator + 1).trim();
+    if (!key) continue;
+    values[key] = value;
+  }
+  return values;
+}
+async function loadAppConfig() {
+  const response = await fetch('/api/apps/' + encodeURIComponent(appId()) + '/config', { method: 'GET' });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) return;
+  const domainNode = document.getElementById('app-public-domain');
+  const portNode = document.getElementById('app-proxy-target-port');
+  const tlsNode = document.getElementById('app-use-tls');
+  const envNode = document.getElementById('app-managed-env');
+  if (domainNode) domainNode.value = payload.public_domain || '';
+  if (portNode) portNode.value = payload.proxy_target_port ? String(payload.proxy_target_port) : '';
+  if (tlsNode) tlsNode.checked = !!payload.use_tls;
+  if (envNode) envNode.value = renderManagedEnv(payload.managed_env || {});
+}
+async function saveAppConfig() {
+  const feedback = document.getElementById('app-config-feedback');
+  if (feedback) feedback.textContent = 'Saving app settings...';
+  const request = {
+    public_domain: document.getElementById('app-public-domain').value.trim(),
+    proxy_target_port: Number.parseInt(document.getElementById('app-proxy-target-port').value, 10) || 0,
+    use_tls: !!document.getElementById('app-use-tls').checked,
+    managed_env: parseManagedEnv(document.getElementById('app-managed-env').value),
+  };
+  const response = await fetch('/api/apps/' + encodeURIComponent(appId()) + '/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    if (feedback) feedback.textContent = payload.error || 'Failed to save app settings';
+    return;
+  }
+  if (feedback) feedback.textContent = 'App settings saved';
+  await loadAppConfig();
+}
+document.addEventListener('DOMContentLoaded', loadAppConfig);`
+
+templ AppDetailPaasPage(data AppDetailPaasView) {
+	@kitlayout.Shell(kitlayout.ShellProps{Title: data.Title, Active: data.Active, NavItems: NavigationItems()}, AppDetailPaasContent(data))
+}
+
+templ AppDetailPaasContent(data AppDetailPaasView) {
+	<section id="app-detail-root" data-app-id={ data.ID } class="space-y-4">
+		<div class="flex items-start justify-between gap-3">
+			<div>
+				<div class="text-sm text-muted-foreground">App ID: { data.ID }</div>
+				<h2 class="text-2xl font-semibold">{ data.Name }</h2>
+			</div>
+			@StatusBadge(data.Status)
+		</div>
+		<div class="grid gap-3 md:grid-cols-2">
+			<div class="card card-content space-y-2">
+				<div class="font-semibold">Runtime</div>
+				<p class="text-sm text-muted-foreground">Stack directory: { data.Dir }</p>
+				<p class="text-sm text-muted-foreground">Ports: { data.PortsStr }</p>
+				<p class="text-sm text-muted-foreground">Updated: { data.UpdatedAt }</p>
+			</div>
+			<div class="card card-content space-y-3">
+				<div class="font-semibold">Public access</div>
+				<label class="block text-sm text-muted-foreground">Public domain<input id="app-public-domain" type="text" class="form-input" placeholder="app.example.com"/></label>
+				<p class="text-xs text-muted-foreground">Traffic starts as HTTP by default on the configured domain.</p>
+				<label class="block text-sm text-muted-foreground">Proxy target port<input id="app-proxy-target-port" type="number" min="1" max="65535" class="form-input" placeholder="3000"/></label>
+				<p class="text-xs text-muted-foreground">Use the internal container port that the host nginx proxy should target on the managed Docker network.</p>
+				<label class="flex items-center gap-2 text-sm"><input id="app-use-tls" type="checkbox"/><span>Enable HTTPS on proxy</span></label>
+				<p class="text-xs text-muted-foreground">Enable HTTPS only after valid Let's Encrypt settings are configured; otherwise the app remains available on HTTP.</p>
+				<label class="block text-sm text-muted-foreground">Managed environment variables<textarea id="app-managed-env" class="mt-1 w-full rounded border border-border bg-background p-2 text-sm" rows="6"></textarea></label>
+				<button type="button" class="rounded border border-border px-4 py-2 text-sm" onclick="saveAppConfig()">Save app settings</button>
+				<div id="app-config-feedback" class="text-sm text-muted-foreground"></div>
+			</div>
+			<div class="card card-content space-y-3">
+				<div class="font-semibold">Actions</div>
+				<div class="flex flex-wrap gap-2">
+					<button class="rounded border border-border px-4 py-2 text-sm" onclick="runAppAction('deploy')">Deploy</button>
+					<button class="rounded border border-border px-4 py-2 text-sm" onclick="runAppAction('restart')">Restart</button>
+					<button class="rounded border border-border px-4 py-2 text-sm" onclick="runAppAction('stop')">Stop</button>
+				</div>
+				<div class="mt-2"><button class="rounded border border-destructive px-4 py-2 text-sm text-destructive" onclick="deleteApp()">Delete</button></div>
+				<div id="app-feedback" class="text-sm text-muted-foreground"></div>
+				<div class="flex flex-wrap gap-2">
+					<a href={ "/apps/" + data.ID + "/compose" } class="rounded border border-border px-4 py-2 text-sm">Compose</a>
+					<a href={ "/apps/" + data.ID + "/logs" } class="rounded border border-border px-4 py-2 text-sm">Logs</a>
+				</div>
+			</div>
+		</div>
+		<script>@templ.Raw(appDetailPaasScript)</script>
+	</section>
+}

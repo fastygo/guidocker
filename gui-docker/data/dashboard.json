@@ -1,0 +1,85 @@
+{
+  "title": "Docker Container Dashboard",
+  "subtitle": "Real-time container monitoring",
+  "stats": {
+    "total_containers": 6,
+    "running_containers": 2,
+    "stopped_containers": 1,
+    "paused_containers": 3
+  },
+  "containers": [
+    {
+      "id": "web-app-01",
+      "name": "nginx-web",
+      "image": "nginx:alpine",
+      "status": "paused",
+      "ports": [
+        "80:80",
+        "443:443"
+      ],
+      "cpu_usage": 15.2,
+      "memory_usage": 45.8
+    },
+    {
+      "id": "api-server-01",
+      "name": "api-server",
+      "image": "golang:1.21",
+      "status": "paused",
+      "ports": [
+        "8080:8080"
+      ],
+      "cpu_usage": 23.1,
+      "memory_usage": 78.3
+    },
+    {
+      "id": "db-postgres-01",
+      "name": "postgres-db",
+      "image": "postgres:15",
+      "status": "running",
+      "ports": [
+        "5432:5432"
+      ],
+      "cpu_usage": 8.7,
+      "memory_usage": 156.2
+    },
+    {
+      "id": "cache-redis-01",
+      "name": "redis-cache",
+      "image": "redis:7-alpine",
+      "status": "stopped",
+      "ports": [
+        "6379:6379"
+      ],
+      "cpu_usage": 0,
+      "memory_usage": 0
+    },
+    {
+      "id": "monitoring-01",
+      "name": "prometheus",
+      "image": "prom/prometheus",
+      "status": "running",
+      "ports": [
+        "9090:9090"
+      ],
+      "cpu_usage": 12.4,
+      "memory_usage": 89.1
+    },
+    {
+      "id": "logging-01",
+      "name": "elasticsearch",
+      "image": "elasticsearch:8.11",
+      "status": "paused",
+      "ports": [
+        "9200:9200"
+      ],
+      "cpu_usage": 0,
+      "memory_usage": 0
+    }
+  ],
+  "system": {
+    "cpu_cores": 4,
+    "total_memory": 8192,
+    "used_memory": 3456,
+    "disk_usage": 2341
+  }
+}

@@ -1,0 +1,31 @@
+package pages
+
+import kitlayout "ui8kit/layout"
+
+templ AppsPage(data AppsView) {
+	@kitlayout.Shell(kitlayout.ShellProps{Title: data.Title, Active: data.Active, NavItems: NavigationItems()}, AppsContent(data))
+}
+
+templ AppsContent(data AppsView) {
+	<section class="space-y-4">
+		<div class="flex items-center justify-between">
+			<div>
+				<div class="text-sm text-muted-foreground">Managed containers</div>
+				<div class="text-2xl font-semibold">Apps</div>
+			</div>
+			<a href="/apps/new" class="rounded border border-border px-4 py-2 text-sm">Create app</a>
+		</div>
+		<div class="grid gap-2">
+			if len(data.Items) > 0 {
+				for _, item := range data.Items {
+					<a href={ "/apps/" + item.ID } class="app-row hover:bg-accent">
+						<span class="truncate font-medium">{ item.Name }</span>
+						@StatusBadge(item.Status)
+					</a>
+				}
+			} else {
+				<div class="rounded border border-dashed border-border bg-card p-6 text-sm text-muted-foreground">No applications yet. Create your first stack from the Compose screen.</div>
+			}
+		</div>
+	</section>
+}

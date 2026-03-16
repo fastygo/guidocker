@@ -1,4 +1,4 @@
-@import "../../dashboard/node_modules/tailwindcss";
+@import "tailwindcss";
 
 /* Scan project HTML so the JIT compiler keeps only used classes. */
 @source "./index.html";

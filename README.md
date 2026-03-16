@@ -6,13 +6,20 @@ A lightweight PaaS for managing Docker applications. Deploy, monitor, and clean 
 
 ```text
 @GUIDocker/
-├── dashboard/           # Go application — main PaaS server
+├── ui8kit/              # Shared headless UI component library (Go templ)
+│   ├── ui/              # Primitives: Box, Stack, Group, Button, Badge, Field...
+│   ├── layout/          # Shell, Sidebar, Header (full page layout)
+│   ├── utils/           # UtilityProps, cn(), variant functions
+│   └── styles/          # base.css, components.css, latty.css
+│
+├── gui-docker/          # Go application — main PaaS server
+│   ├── cmd/             # Application entry point
 │   ├── config/          # Configuration
 │   ├── domain/          # Entities, ports
-│   ├── infrastructure/  # BoltDB, Docker CLI
-│   ├── interfaces/      # HTTP handlers, middleware
-│   ├── usecase/         # App lifecycle, scanner
-│   ├── views/           # HTML templates
+│   ├── infrastructure/  # BoltDB, Docker CLI, Git, Nginx, Certbot
+│   ├── handlers/        # HTTP page handlers, REST API
+│   ├── usecase/         # App lifecycle, scanner, settings
+│   ├── pages/           # Templ page components
 │   └── static/          # Tailwind CSS, assets
 │
 ├── website/             # Public home page / landing site
@@ -24,15 +31,16 @@ A lightweight PaaS for managing Docker applications. Deploy, monitor, and clean 
 └── .project/            # Project planning notes and internal docs
 ```
 
-- **dashboard/** — Go server with HTTP Basic Auth, BoltDB, and Docker Compose integration. Serves the full admin UI (Overview, Apps, Compose, Logs, Scanner, Settings) and REST API.
-- **website/** — Static landing page (HTML + Tailwind) for the public product home page. Built via `npm run build:www` from `dashboard/` and importable into the admin panel via `website/docker-compose.yml`.
+- **ui8kit/** — Headless component library built with [templ](https://templ.guide). Reusable across gui-docker and future admin panels (gui-php, gui-bare-sections, etc.).
+- **gui-docker/** — Go server with HTTP Basic Auth, BoltDB, and Docker Compose integration. Serves the full admin UI (Overview, Apps, Compose, Logs, Scanner, Settings) and REST API.
+- **website/** — Static landing page (HTML + Tailwind) for the public product home page. Built via `npm run build:www` from `gui-docker/` and importable into the admin panel via `website/docker-compose.yml`.
 
 ## Quick Start
 
 ```bash
-cd dashboard
-go build -o dashboard .
-PAAS_ADMIN_USER=admin PAAS_ADMIN_PASS=admin@123 ./dashboard
+cd gui-docker
+go build -trimpath -ldflags="-s -w" -o gui-docker ./cmd
+PAAS_ADMIN_USER=admin PAAS_ADMIN_PASS=admin@123 ./gui-docker
 ```
 
 Open `http://localhost:3000`.
@@ -40,10 +48,10 @@ Open `http://localhost:3000`.
 ## Build Frontend Assets
 
 ```bash
-cd dashboard
+cd gui-docker
 npm install
 
-# Dashboard UI (Tailwind)
+# Admin panel UI (Tailwind)
 npm run build:css
 
 # Landing page (website/)
@@ -52,9 +60,9 @@ npm run build:www
 
 ## Deployment Model
 
-- The dashboard remains an autonomous temporary GUI for a single root operator.
-- Applications are deployed by Docker Compose and continue running after the dashboard container is removed.
-- Public routing is handled by host-installed `nginx` and `certbot`, managed by the dashboard.
+- The panel remains an autonomous temporary GUI for a single root operator.
+- Applications are deployed by Docker Compose and continue running after the panel container is removed.
+- Public routing is handled by host-installed `nginx` and `certbot`, managed by the panel.
 - Applications are attached to the managed Docker network `paas-network` and should be routed by internal container port, not by published host ports.
 
 ## Website Import Checklist
@@ -66,7 +74,7 @@ Use this flow to deploy the official landing page through the admin panel:
 3. Set compose file path to `website/docker-compose.yml`.
 4. Leave app port empty because the compose file already defines the service.
 5. Deploy the imported app.
-6. Open app settings in the dashboard.
+6. Open app settings in the admin panel.
 7. Set `ProxyTargetPort` to `80` because routing now targets the internal container port on `paas-network`.
 8. Save the app configuration.
 9. Add the public domain later through routing/settings in the admin panel.
@@ -85,7 +93,7 @@ Use this sequence after the site is already reachable over plain HTTP on its dom
 - `Enable automatic renewal`
   Keep this enabled for normal operation. Disable it only if you plan to run renewal manually on the host.
 - `I accept Let's Encrypt terms of service`
-  Required before the dashboard can issue a certificate.
+  Required before the panel can issue a certificate.
 - `Save admin settings`
   Save platform TLS settings before enabling HTTPS on a specific app.
 - `Run certificate renewal now`
@@ -146,14 +154,14 @@ Equivalent terminal checks:
 
 ```bash
 certbot renew --dry-run
-docker logs --tail 100 dashboard
+docker logs --tail 100 gui-docker
 nginx -t
 ```
 
 Expected result:
 
 - `certbot renew --dry-run` succeeds
-- dashboard logs do not show certificate errors
+- panel logs do not show certificate errors
 - `nginx -t` remains successful after renewal
 
 ### Switching From Staging To Production
@@ -167,4 +175,4 @@ Expected result:
 
 ## Documentation
 
-- [dashboard/README.md](dashboard/README.md) — Full dashboard docs: setup, API, deployment, Makefile targets.
+- [gui-docker/README.md](gui-docker/README.md) — Full panel docs: setup, API, deployment, Makefile targets, nginx/certbot.

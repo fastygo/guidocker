@@ -1,0 +1,49 @@
+package pages
+
+import (
+	"github.com/a-h/templ"
+	kitlayout "ui8kit/layout"
+)
+
+const logsScript = `function logsAppId() {
+  const root = document.getElementById('logs-root');
+  return root ? root.dataset.appId || '' : '';
+}
+async function loadAppLogs() {
+  const logsNode = document.getElementById('app-logs-content');
+  const feedback = document.getElementById('app-feedback');
+  if (feedback) feedback.textContent = 'Loading logs...';
+  const response = await fetch('/api/apps/' + encodeURIComponent(logsAppId()) + '/logs?lines=100');
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    if (logsNode) logsNode.textContent = payload.error || 'Failed to load logs';
+    if (feedback) feedback.textContent = 'Unable to fetch logs';
+    return;
+  }
+  if (logsNode) logsNode.textContent = payload.logs || 'No logs yet';
+  if (feedback) feedback.textContent = 'Status: ' + (payload.status || 'unknown');
+}
+document.addEventListener('DOMContentLoaded', loadAppLogs);`
+
+templ LogsPage(data LogsView) {
+	@kitlayout.Shell(kitlayout.ShellProps{Title: data.Title, Active: data.Active, NavItems: NavigationItems()}, LogsContent(data))
+}
+
+templ LogsContent(data LogsView) {
+	<section id="logs-root" data-app-id={ data.ID } class="space-y-4">
+		<div>
+			<div class="text-sm text-muted-foreground">{ data.ID }</div>
+			<div class="text-2xl font-semibold">{ data.Name } logs</div>
+			<div class="text-sm text-muted-foreground">Recent runtime log output</div>
+		</div>
+		<div id="app-feedback" class="text-sm text-muted-foreground"></div>
+		<div class="flex gap-2">
+			<button onclick="loadAppLogs()" class="rounded border border-border px-4 py-2 text-sm">Refresh</button>
+			<a href={ "/apps/" + data.ID + "/compose" } class="rounded border border-border px-4 py-2 text-sm">Open compose</a>
+		</div>
+		<div class="card card-content overflow-x-auto">
+			<pre id="app-logs-content" class="whitespace-pre-wrap text-xs text-muted-foreground">{ data.LogsContent }</pre>
+		</div>
+		<script>@templ.Raw(logsScript)</script>
+	</section>
+}

@@ -1,0 +1,9 @@
+package ui
+
+import "github.com/a-h/templ"
+
+type BlockProps = BoxProps
+
+templ Block(props BlockProps, children templ.Component) {
+	@Box(BoxProps(props), children)
+}

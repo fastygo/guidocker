@@ -1,0 +1,33 @@
+@layer components {
+  .card {
+    @apply rounded border border-border bg-card;
+  }
+
+  .card-header {
+    @apply border-b border-border px-4 py-2;
+  }
+
+  .card-title {
+    @apply text-sm font-semibold;
+  }
+
+  .card-content {
+    @apply p-4;
+  }
+
+  .status-badge {
+    @apply inline-flex rounded px-2 py-1 text-xs font-medium;
+  }
+
+  .app-row {
+    @apply flex items-center justify-between gap-2 rounded border border-border bg-card px-4 py-2 text-sm;
+  }
+
+  .form-label {
+    @apply text-sm text-muted-foreground;
+  }
+
+  .form-input {
+    @apply mt-1 w-full rounded border border-border bg-background px-3 py-2 text-sm;
+  }
+}

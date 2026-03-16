@@ -1,0 +1,7 @@
+@import "tailwindcss";
+@import "../../../ui8kit/styles/base.css";
+@import "../../../ui8kit/styles/components.css";
+@import "../../../ui8kit/styles/latty.css";
+
+@source "../../../ui8kit/**/*.templ";
+@source "../../pages/**/*.templ";
