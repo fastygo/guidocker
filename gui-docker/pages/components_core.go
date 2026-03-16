@@ -2,7 +2,6 @@ package pages
 
 import (
 	"context"
-	"fmt"
 	"github.com/a-h/templ"
 	"html"
 	"io"
