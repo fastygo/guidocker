@@ -38,7 +38,7 @@ A lightweight PaaS for managing Docker applications. Deploy, monitor, and clean 
 ## Quick Start
 
 ```bash
-cd gui-docker
+cd guidocker
 go build -trimpath -ldflags="-s -w" -o gui-docker ./cmd
 PAAS_ADMIN_USER=admin PAAS_ADMIN_PASS=admin@123 ./gui-docker
 ```
@@ -48,7 +48,7 @@ Open `http://localhost:3000`.
 ## Build Frontend Assets
 
 ```bash
-cd gui-docker
+cd guidocker
 npm install
 
 # Admin panel UI (Tailwind)

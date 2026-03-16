@@ -70,8 +70,16 @@ newgrp docker
 ### Option 1: Build and run on the host
 
 ```bash
-git clone https://github.com/youruser/gui-docker.git
-cd gui-docker/gui-docker
+git clone https://github.com/fastygo/guidocker.git
+cd guidocker/gui-docker
+
+# Пример для Go 1.22
+wget https://go.dev/dl/go1.22.2.linux-amd64.tar.gz
+sudo rm -rf /usr/local/go
+sudo tar -C /usr/local -xzf go1.22.2.linux-amd64.tar.gz
+echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
+source ~/.bashrc
+go version
 
 go test ./...
 go build -trimpath -ldflags="-s -w" -o gui-docker ./cmd
@@ -89,7 +97,7 @@ Then open: `http://localhost:3000`
 ### Option 2: Build release binary with Make
 
 ```bash
-cd gui-docker/gui-docker
+cd guidocker/gui-docker
 make release
 ```
 
@@ -100,8 +108,8 @@ Copy `dist/gui-docker-linux-amd64` to the server and run with environment variab
 Build from the repository root (the Dockerfile uses monorepo context):
 
 ```bash
-git clone https://github.com/youruser/gui-docker.git
-cd gui-docker
+git clone https://github.com/fastygo/guidocker.git
+cd guidocker
 
 docker build -f gui-docker/Dockerfile -t gui-docker:latest .
 ```
@@ -109,7 +117,7 @@ docker build -f gui-docker/Dockerfile -t gui-docker:latest .
 Or use Make from inside `gui-docker/`:
 
 ```bash
-cd gui-docker/gui-docker
+cd guidocker/gui-docker
 make docker-build
 ```
 
@@ -146,10 +154,14 @@ docker run -d \
   gui-docker:latest
 ```
 
+```bash
+docker logs --tail 80 gui-docker
+```
+
 Or use Make with auto GID detection:
 
 ```bash
-cd gui-docker/gui-docker
+cd guidocker/gui-docker
 make docker-run-auto PAAS_ADMIN_USER=admin PAAS_ADMIN_PASS='admin@123'
 ```
 
@@ -158,7 +170,7 @@ make docker-run-auto PAAS_ADMIN_USER=admin PAAS_ADMIN_PASS='admin@123'
 ### Prerequisites
 
 ```bash
-cd gui-docker/gui-docker
+cd guidocker/gui-docker
 npm install
 ```
 
@@ -178,7 +190,7 @@ make css
 ### Dev mode (no Docker required)
 
 ```bash
-cd gui-docker/gui-docker
+cd guidocker/gui-docker
 DASHBOARD_DEV_MODE=true DASHBOARD_AUTH_DISABLED=true go run ./cmd
 ```
 
@@ -411,7 +423,7 @@ nginx -t
 ## Tests
 
 ```bash
-cd gui-docker
+cd guidocker
 go test ./...
 ```
 
