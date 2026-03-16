@@ -1,0 +1,21 @@
+package ui
+
+import (
+	"github.com/a-h/templ"
+	"ui8kit/utils"
+)
+
+type ContainerProps struct {
+	utils.UtilityProps
+	Class string
+}
+
+func (p ContainerProps) classes() string {
+	return utils.Cn("max-w-7xl mx-auto px-4", p.UtilityProps.Resolve(), p.Class)
+}
+
+templ Container(props ContainerProps, children templ.Component) {
+	<div class={ props.classes() }>
+		@children
+	</div>
+}

@@ -1,0 +1,20 @@
+package pages
+
+templ StatusBadge(status string) {
+	<span class={ StatusClass(status) }>{ StatusLabel(status) }</span>
+}
+
+templ ContainerActions(id, status string) {
+	if status == "running" {
+		<button class="rounded border border-border bg-muted px-4 py-2 text-sm text-muted-foreground" onclick={ "updateContainerStatus('" + id + "', 'stop')" }>Stop</button>
+		<button class="rounded border border-border bg-muted px-4 py-2 text-sm text-muted-foreground" onclick={ "updateContainerStatus('" + id + "', 'pause')" }>Pause</button>
+		<button class="rounded border border-border bg-accent px-4 py-2 text-sm text-accent-foreground" onclick={ "updateContainerStatus('" + id + "', 'restart')" }>Restart</button>
+	} else if status == "stopped" {
+		<button class="rounded border border-border bg-primary px-4 py-2 text-sm text-primary-foreground" onclick={ "updateContainerStatus('" + id + "', 'start')" }>Start</button>
+	} else if status == "paused" {
+		<button class="rounded border border-border bg-accent px-4 py-2 text-sm text-accent-foreground" onclick={ "updateContainerStatus('" + id + "', 'unpause')" }>Unpause</button>
+		<button class="rounded border border-destructive bg-destructive px-4 py-2 text-sm text-destructive-foreground" onclick={ "updateContainerStatus('" + id + "', 'stop')" }>Stop</button>
+	} else {
+		<button class="rounded border border-border bg-primary px-4 py-2 text-sm text-primary-foreground" onclick={ "updateContainerStatus('" + id + "', 'start')" }>Start</button>
+	}
+}

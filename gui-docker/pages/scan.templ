@@ -1,0 +1,108 @@
+package pages
+
+import (
+	"fmt"
+	"github.com/a-h/templ"
+	kitlayout "ui8kit/layout"
+)
+
+const scanScript = `window.toggleScanRow = function(rowId) {
+  const row = document.getElementById(rowId);
+  if (!row) return;
+  row.classList.toggle('hidden');
+};
+window.copyScanCommands = async function(outputId) {
+  const target = document.getElementById(outputId);
+  if (!target) return;
+  try {
+    await navigator.clipboard.writeText(target.textContent || '');
+  } catch (err) {
+    console.error('Copy failed:', err);
+  }
+};`
+
+templ ScanPage(data ScanView) {
+	@kitlayout.Shell(kitlayout.ShellProps{Title: data.Title, Active: data.Active, NavItems: NavigationItems()}, ScanContent(data))
+}
+
+templ ScanContent(data ScanView) {
+	<section class="space-y-4">
+		<div class="text-sm text-muted-foreground">Scanner reports all discovered Docker resources with safe cleanup hints.</div>
+		<div class="text-2xl font-semibold">Scanner</div>
+		<div class="text-xs text-muted-foreground">Last scan: { data.ScannedAt }</div>
+		<div class="card card-content">
+			<div class="text-sm text-muted-foreground">Stacks directory</div>
+			<div class="mt-1 text-sm">
+				if data.StacksDir != "" {
+					{ data.StacksDir }
+				} else {
+					unknown
+				}
+			</div>
+		</div>
+		<div class="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+			<article class="card card-content"><div class="text-xs text-muted-foreground">Managed</div><p class="text-2xl font-semibold">{ data.Summary.Managed }</p></article>
+			<article class="card card-content"><div class="text-xs text-muted-foreground">Broken apps</div><p class="text-2xl font-semibold">{ data.Summary.Broken }</p></article>
+			<article class="card card-content"><div class="text-xs text-muted-foreground">Orphan dirs</div><p class="text-2xl font-semibold">{ data.Summary.OrphanDir }</p></article>
+			<article class="card card-content"><div class="text-xs text-muted-foreground">Orphan runtime</div><p class="text-2xl font-semibold">{ data.Summary.OrphanRuntime }</p></article>
+			<article class="card card-content"><div class="text-xs text-muted-foreground">Stale admin</div><p class="text-2xl font-semibold">{ data.Summary.StaleAdmin }</p></article>
+			<article class="card card-content"><div class="text-xs text-muted-foreground">Unknown</div><p class="text-2xl font-semibold">{ data.Summary.Unknown }</p></article>
+		</div>
+		<div class="card">
+			<div class="card-header"><div class="card-title">Discovered resources</div></div>
+			<div class="overflow-x-auto">
+				if len(data.Resources) > 0 {
+					<table class="w-full">
+						<thead class="bg-muted">
+							<tr>
+								<th class="min-w-0 px-4 py-2 text-left text-xs font-semibold text-muted-foreground">Name</th>
+								<th class="min-w-0 px-4 py-2 text-left text-xs font-semibold text-muted-foreground">Kind</th>
+								<th class="min-w-0 px-4 py-2 text-left text-xs font-semibold text-muted-foreground">Status</th>
+								<th class="min-w-0 px-4 py-2 text-left text-xs font-semibold text-muted-foreground">Confidence</th>
+								<th class="min-w-0 px-4 py-2 text-left text-xs font-semibold text-muted-foreground">Dir</th>
+								<th class="min-w-0 px-4 py-2 text-left text-xs font-semibold text-muted-foreground">Containers</th>
+								<th class="min-w-0 px-4 py-2 text-left text-xs font-semibold text-muted-foreground">Reason</th>
+							</tr>
+						</thead>
+						<tbody class="divide-y divide-border">
+							for i, resource := range data.Resources {
+								<tr>
+									<td class="min-w-0 px-4 py-2 text-sm">{ resource.Name }</td>
+									<td class="min-w-0 px-4 py-2 text-sm">{ resource.Kind }</td>
+									<td class="min-w-0 px-4 py-2 text-sm">{ resource.Status }</td>
+									<td class="min-w-0 px-4 py-2 text-sm">{ resource.Confidence }</td>
+									<td class="min-w-0 px-4 py-2 text-sm text-muted-foreground">{ resource.Dir }</td>
+									<td class="min-w-0 px-4 py-2 text-sm text-muted-foreground">{ JoinStrings(resource.Containers, ", ") }</td>
+									<td class="min-w-0 px-4 py-2 text-sm text-muted-foreground"><button class="rounded border border-border px-2 py-1 text-xs" onclick={ fmt.Sprintf("toggleScanRow('scan-row-%d')", i) }>Details</button></td>
+								</tr>
+								<tr id={ fmt.Sprintf("scan-row-%d", i) } class="hidden">
+									<td class="px-4 py-2" colspan="7">
+										<div class="space-y-3">
+											<div class="text-sm"><div class="font-semibold">Reason</div><div class="text-muted-foreground">{ resource.Reason }</div></div>
+											<div class="text-sm"><div class="font-semibold">Project</div><div class="text-muted-foreground">{ resource.ComposeProject }</div></div>
+											<div class="text-sm"><div class="font-semibold">Ports</div><div class="text-muted-foreground">{ JoinStrings(resource.Ports, ", ") }</div></div>
+											if resource.IsCurrent {
+												<div class="text-xs text-amber-500">This appears to be the currently running admin container.</div>
+											}
+											<div>
+												<div class="mb-1 text-sm font-semibold">Cleanup commands</div>
+												if len(resource.CleanupCmds) > 0 {
+													<div class="relative"><button class="absolute right-2 top-2 rounded border border-border px-2 py-1 text-xs" onclick={ fmt.Sprintf("copyScanCommands('scan-cmd-%d')", i) }>Copy</button><pre id={ fmt.Sprintf("scan-cmd-%d", i) } class="overflow-x-auto whitespace-pre-wrap rounded border border-border bg-muted px-4 py-2 text-xs">{ JoinStrings(resource.CleanupCmds, "\n") }</pre></div>
+												} else {
+													<div class="text-sm text-muted-foreground">No automatic command is suggested for this item.</div>
+												}
+											</div>
+										</div>
+									</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				} else {
+					<div class="p-4 text-sm text-muted-foreground">No resources discovered yet.</div>
+				}
+			</div>
+		</div>
+		<script>@templ.Raw(scanScript)</script>
+	</section>
+}

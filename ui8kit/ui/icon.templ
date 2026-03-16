@@ -1,0 +1,28 @@
+package ui
+
+import "ui8kit/utils"
+
+type IconProps struct {
+	Name  string
+	Size  string
+	Class string
+}
+
+func (p IconProps) sizeClass() string {
+	switch p.Size {
+	case "xs":
+		return "h-3 w-3"
+	case "sm", "":
+		return "h-4 w-4"
+	case "md":
+		return "h-5 w-5"
+	case "lg":
+		return "h-6 w-6"
+	default:
+		return p.Size
+	}
+}
+
+templ Icon(props IconProps) {
+	<span class={ utils.Cn("latty", "latty-"+props.Name, props.sizeClass(), props.Class) }></span>
+}

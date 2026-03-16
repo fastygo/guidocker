@@ -1,0 +1,18 @@
+package ui
+
+import "ui8kit/utils"
+
+type BadgeProps struct {
+	utils.UtilityProps
+	Variant string
+	Size    string
+	Class   string
+}
+
+func (p BadgeProps) classes() string {
+	return utils.Cn(utils.BadgeStyleVariant(p.Variant), utils.BadgeSizeVariant(p.Size), p.UtilityProps.Resolve(), p.Class)
+}
+
+templ Badge(props BadgeProps, label string) {
+	<span class={ props.classes() }>{ label }</span>
+}

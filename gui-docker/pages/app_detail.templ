@@ -1,0 +1,33 @@
+package pages
+
+import kitlayout "ui8kit/layout"
+
+templ AppDetailPage(data AppDetailView) {
+	@kitlayout.Shell(kitlayout.ShellProps{Title: data.Title, Active: data.Active, NavItems: NavigationItems()}, AppDetailContent(data))
+}
+
+templ AppDetailContent(data AppDetailView) {
+	<section class="space-y-4">
+		<div>
+			<h2 class="text-2xl font-semibold">{ data.Name }</h2>
+			<div class="text-sm text-muted-foreground">ID: { data.ID }</div>
+		</div>
+		<div class="grid gap-3 md:grid-cols-2">
+			<div class="card card-content">
+				<div class="font-semibold">Runtime</div>
+				<p class="text-sm text-muted-foreground">Image: { data.Image }</p>
+				<p class="text-sm text-muted-foreground">Ports: { data.PortsStr }</p>
+				<p class="text-sm text-muted-foreground">CPU: { data.CPUPercent } / Memory: { data.MemoryMB }</p>
+				<div class="mt-3">@StatusBadge(data.Status)</div>
+			</div>
+			<div class="card card-content">
+				<div class="font-semibold">Actions</div>
+				<div class="mt-2">@ContainerActions(data.ID, data.Status)</div>
+				<div class="mt-3 space-y-2">
+					<a href={ "/apps/" + data.ID + "/compose" } class="inline-block rounded border border-border px-4 py-2 text-sm">Compose</a>
+					<a href={ "/apps/" + data.ID + "/logs" } class="inline-block rounded border border-border px-4 py-2 text-sm">Logs</a>
+				</div>
+			</div>
+		</div>
+	</section>
+}

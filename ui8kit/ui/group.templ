@@ -1,0 +1,27 @@
+package ui
+
+import (
+	"github.com/a-h/templ"
+	"ui8kit/utils"
+)
+
+type GroupProps struct {
+	utils.UtilityProps
+	Class string
+	Tag   string
+	Grow  bool
+}
+
+func (p GroupProps) classes() string {
+	base := "flex gap-4 items-center justify-start min-w-0"
+	if p.Grow {
+		base = utils.Cn(base, "w-full [&>*]:grow")
+	}
+	return utils.Cn(base, p.UtilityProps.Resolve(), p.Class)
+}
+
+templ Group(props GroupProps, children templ.Component) {
+	<div class={ props.classes() }>
+		@children
+	</div>
+}

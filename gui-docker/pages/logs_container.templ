@@ -1,0 +1,25 @@
+package pages
+
+import kitlayout "ui8kit/layout"
+
+templ LogsContainerPage(data LogsView) {
+	@kitlayout.Shell(kitlayout.ShellProps{Title: data.Title, Active: data.Active, NavItems: NavigationItems()}, LogsContainerContent(data))
+}
+
+templ LogsContainerContent(data LogsView) {
+	<section class="space-y-4">
+		<div>
+			<div class="text-sm text-muted-foreground">{ data.ID }</div>
+			<div class="text-2xl font-semibold">{ data.Name } logs</div>
+			<div class="text-sm text-muted-foreground">Recent runtime log output</div>
+		</div>
+		<div id="app-feedback" class="text-sm text-muted-foreground"></div>
+		<div class="flex gap-2">
+			<button onclick="showComposeMessage('Logs refreshed')" class="rounded border border-border px-4 py-2 text-sm">Refresh</button>
+			<a href={ "/apps/" + data.ID + "/compose" } class="rounded border border-border px-4 py-2 text-sm">Open compose</a>
+		</div>
+		<div class="card card-content overflow-x-auto">
+			<pre class="whitespace-pre-wrap text-xs text-muted-foreground">{ data.LogsContent }</pre>
+		</div>
+	</section>
+}

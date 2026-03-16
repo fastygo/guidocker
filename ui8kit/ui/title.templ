@@ -1,0 +1,44 @@
+package ui
+
+import "ui8kit/utils"
+
+type TitleProps struct {
+	utils.UtilityProps
+	Class         string
+	Order         int
+	FontSize      string
+	FontWeight    string
+	LineHeight    string
+	LetterSpacing string
+	TextColor     string
+	TextAlign     string
+	Truncate      bool
+}
+
+func (p TitleProps) classes() string {
+	fontSize := p.FontSize
+	if fontSize == "" {
+		fontSize = "2xl"
+	}
+	fontWeight := p.FontWeight
+	if fontWeight == "" {
+		fontWeight = "semibold"
+	}
+	return utils.Cn(utils.TypographyClasses(fontSize, fontWeight, p.LineHeight, p.LetterSpacing, p.TextColor, p.TextAlign, p.Truncate), p.UtilityProps.Resolve(), p.Class)
+}
+
+templ Title(props TitleProps, value string) {
+	if props.Order == 1 {
+		<h1 class={ props.classes() }>{ value }</h1>
+	} else if props.Order == 3 {
+		<h3 class={ props.classes() }>{ value }</h3>
+	} else if props.Order == 4 {
+		<h4 class={ props.classes() }>{ value }</h4>
+	} else if props.Order == 5 {
+		<h5 class={ props.classes() }>{ value }</h5>
+	} else if props.Order == 6 {
+		<h6 class={ props.classes() }>{ value }</h6>
+	} else {
+		<h2 class={ props.classes() }>{ value }</h2>
+	}
+}

@@ -1,0 +1,38 @@
+package pages
+
+import kitlayout "ui8kit/layout"
+
+templ ComposeContainerPage(data ComposeContainerView) {
+	@kitlayout.Shell(kitlayout.ShellProps{Title: data.Title, Active: data.Active, NavItems: NavigationItems()}, ComposeContainerContent(data))
+}
+
+templ ComposeContainerContent(data ComposeContainerView) {
+	<section class="space-y-4">
+		<div>
+			<div class="text-sm text-muted-foreground">{ data.Subtitle }</div>
+			<div class="text-2xl font-semibold">{ data.Title }</div>
+		</div>
+		<div class="grid gap-3 md:grid-cols-2">
+			<div class="card card-content">
+				<div class="font-semibold">Compose pack</div>
+				<form onsubmit="event.preventDefault(); showComposeMessage('Compose saved to local draft');" class="space-y-3">
+					<div><label class="form-label">App name</label><input class="form-input" value={ data.Name }/></div>
+					<div><label class="form-label">Service image</label><input class="form-input" value={ data.Image }/></div>
+					<div><label class="form-label">Docker Compose yaml</label><textarea class="mt-1 w-full rounded border border-border bg-background p-2 text-sm" rows="14">{ data.ComposeYAML }</textarea></div>
+					<div id="compose-status" class="text-sm text-muted-foreground"></div>
+					<div class="flex gap-2">
+						<button type="submit" class="rounded border border-border px-4 py-2 text-sm">Save compose</button>
+						<button type="button" onclick="showComposeMessage('Compose deployment started')" class="rounded border border-border px-4 py-2 text-sm">Deploy now</button>
+					</div>
+				</form>
+			</div>
+			<div class="card card-content">
+				<div class="font-semibold">Shortcuts</div>
+				<div class="mt-3 space-y-2 text-sm text-muted-foreground">
+					<p>Use this screen as a blueprint for full compose-driven deployment.</p>
+					<p>You can paste env vars, volumes, networks and secrets manually into yaml.</p>
+				</div>
+			</div>
+		</div>
+	</section>
+}

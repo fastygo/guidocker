@@ -1,0 +1,31 @@
+package pages
+
+templ LoginPage(data LoginView) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<title>PaaS Login</title>
+			<link rel="stylesheet" href="/static/css/app.css"/>
+		</head>
+		<body class="bg-background text-foreground">
+			<div class="flex min-h-screen items-center justify-center p-6">
+				<form method="post" action="/login" class="w-full max-w-[420px] rounded border border-border bg-card p-6 shadow-sm">
+					<div>
+						<div class="text-sm text-muted-foreground">PaaS Console</div>
+						<h1 class="mt-2 text-3xl font-semibold">Sign in</h1>
+					</div>
+					if data.Message != "" {
+						<div class="mt-4 rounded border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">{ data.Message }</div>
+					}
+					<div class="mt-4 space-y-4">
+						<label class="block text-sm">Username<input type="text" name="username" autocomplete="username" required class="form-input"/></label>
+						<label class="block text-sm">Password<input type="password" name="password" autocomplete="current-password" required class="form-input"/></label>
+						<button type="submit" class="rounded border border-border bg-primary px-4 py-2 text-sm text-primary-foreground">Login</button>
+					</div>
+				</form>
+			</div>
+		</body>
+	</html>
+}
