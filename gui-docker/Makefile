@@ -15,7 +15,7 @@ LDFLAGS ?= -s -w
 IMAGE_NAME ?= gui-docker
 IMAGE_TAG ?= latest
 IMAGE ?= $(IMAGE_NAME):$(IMAGE_TAG)
-DOCKERFILE ?= gui-docker/Dockerfile
+DOCKERFILE ?= Dockerfile
 CONTAINER_NAME ?= gui-docker
 DOCKER_GID ?= 999
 

@@ -158,6 +158,12 @@ docker run -d \
 docker logs --tail 80 gui-docker
 ```
 
+Update 
+
+```bash
+git pull origin main
+```
+
 Or use Make with auto GID detection:
 
 ```bash
