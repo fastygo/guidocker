@@ -212,6 +212,12 @@ docker inspect dashboard --format '{{json .HostConfig.SecurityOpt}}'
 docker exec dashboard chroot /host /usr/sbin/nginx -t
 docker exec dashboard chroot /host getent hosts acme-v02.api.letsencrypt.org
 docker logs --tail 80 dashboard
+
+cd guidocker/dashboard
+
+docker start dashboard
+docker stop dashboard
+docker rm dashboard
 ```
 
 Expected result:
