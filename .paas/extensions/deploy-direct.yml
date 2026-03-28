@@ -6,7 +6,7 @@ inputs:
   - name: app_name
     label: Application name
     type: text
-    default: starter
+    default: paas-dashboard
   - name: app_id
     label: Existing dashboard application ID
     type: text
@@ -23,6 +23,18 @@ inputs:
     label: Dashboard password
     type: password
     required: true
+  - name: public_domain
+    label: Public domain
+    type: text
+    required: true
+  - name: proxy_target_port
+    label: Proxy target port
+    type: text
+    default: "7000"
+  - name: use_tls
+    label: Use TLS
+    type: text
+    default: "false"
   - name: tag
     label: Override local image tag (leave empty for git SHA)
     type: text
@@ -112,6 +124,22 @@ steps:
         "${INPUT_DASHBOARD_URL}/api/health" >/dev/null
     description: "Verify steady-state dashboard API"
 
+  - id: build_app_config_payload
+    env:
+      PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    run: |
+      set -eu
+      jq -n \
+        --arg public_domain "${INPUT_PUBLIC_DOMAIN}" \
+        --argjson proxy_target_port "${INPUT_PROXY_TARGET_PORT}" \
+        --argjson use_tls "${INPUT_USE_TLS}" \
+        '{
+          public_domain: $public_domain,
+          proxy_target_port: $proxy_target_port,
+          use_tls: $use_tls
+        }' > /tmp/app-config.json
+    description: "Build app routing payload"
+
   - id: update_dashboard
     env:
       PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -123,6 +151,18 @@ steps:
         -H 'Content-Type: application/json' \
         --data @/tmp/dashboard-update.json
     description: "Update existing dashboard app"
+
+  - id: configure_app
+    env:
+      PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    run: |
+      set -eu
+      curl --fail --show-error --silent \
+        -u "${INPUT_DASHBOARD_USER}:${INPUT_DASHBOARD_PASS}" \
+        -X PUT "${INPUT_DASHBOARD_URL}/api/apps/${INPUT_APP_ID}/config" \
+        -H 'Content-Type: application/json' \
+        --data @/tmp/app-config.json
+    description: "Sync app routing settings"
 
   - id: trigger_deploy
     env:
@@ -138,7 +178,7 @@ steps:
     env:
       PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     run: |
-      rm -rf /tmp/build-${INPUT_APP_NAME} /tmp/rendered-compose.yml /tmp/dashboard-update.json
+      rm -rf /tmp/build-${INPUT_APP_NAME} /tmp/rendered-compose.yml /tmp/dashboard-update.json /tmp/app-config.json
     description: "Clean up build directory"
     ignore_error: true
 

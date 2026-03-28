@@ -6,7 +6,7 @@ inputs:
   - name: app_name
     label: Application name
     type: text
-    default: starter
+    default: paas-dashboard
   - name: dashboard_url
     label: Dashboard URL
     type: text
@@ -34,7 +34,7 @@ inputs:
   - name: use_tls
     label: Use TLS
     type: text
-    default: "true"
+    default: "false"
   - name: certbot_email
     label: Certbot email
     type: text
@@ -187,7 +187,7 @@ steps:
       jq -n \
         --arg public_domain "${INPUT_PUBLIC_DOMAIN}" \
         --argjson proxy_target_port "${INPUT_PROXY_TARGET_PORT}" \
-        --argjson use_tls "${INPUT_USE_TLS}" \
+        --argjson use_tls false \
         '{
           public_domain: $public_domain,
           proxy_target_port: $proxy_target_port,

@@ -114,10 +114,10 @@ defaults:
   INPUT_DASHBOARD_URL: http://127.0.0.1:7000
   INPUT_DASHBOARD_USER: <DASHBOARD_USER>
   INPUT_DASHBOARD_PASS: ""
-  INPUT_HEALTHCHECK_URL: https://<APP_PUBLIC_DOMAIN>/api/health
+  INPUT_HEALTHCHECK_URL: ""
   INPUT_PUBLIC_DOMAIN: <APP_PUBLIC_DOMAIN>
   INPUT_PROXY_TARGET_PORT: "7000"
-  INPUT_USE_TLS: "true"
+  INPUT_USE_TLS: "false"
   INPUT_CERTBOT_EMAIL: <CERTBOT_EMAIL>
   INPUT_CERTBOT_STAGING: "false"
   INPUT_CERTBOT_AUTO_RENEW: "true"
@@ -169,7 +169,19 @@ docker --version
 
 On Git Bash in Windows, remote bash can fail because environment includes invalid variable names like `ProgramFiles(x86)`.
 
-Use this wrapper for every deploy extension:
+Use the project wrapper for every deploy extension. It applies this priority:
+
+1. exported `INPUT_*` variables from the current shell
+2. values from `./.paas/config.yml` under `defaults:`
+3. extension-level fallback defaults
+
+Recommended command:
+
+```bash
+bash ./.paas/run.sh <extension-name>
+```
+
+If you still want the low-level manual form, use this wrapper:
 
 ```bash
 env -i \
@@ -185,7 +197,7 @@ env -i \
   ./paas.exe run <extension-name>
 ```
 
-For the registry extension `deploy`, append credentials:
+For the registry extension `deploy`, exported credentials still override config values:
 
 ```bash
 env -i \
@@ -205,6 +217,16 @@ env -i \
 
 Linux/macOS: you can run direct commands, wrapper is optional.
 
+### Wrapper examples
+
+```bash
+bash ./.paas/run.sh bootstrap-direct
+```
+
+```bash
+INPUT_USE_TLS=true bash ./.paas/run.sh deploy-direct
+```
+
 ---
 
 ## 2) First deploy flow (`bootstrap-direct`)
@@ -221,7 +243,7 @@ Use when dashboard app is not created yet.
 - `INPUT_DASHBOARD_PASS` (environment variable is safer for secrets)
 - `INPUT_PUBLIC_DOMAIN` (from `.paas/config.yml`)
 - `INPUT_PROXY_TARGET_PORT` (from `.paas/config.yml`)
-- `INPUT_USE_TLS` (from `.paas/config.yml`)
+- `INPUT_USE_TLS` (from `.paas/config.yml`, keep `false` for first bootstrap)
 - `INPUT_CERTBOT_EMAIL` (from `.paas/config.yml`)
 - `INPUT_CERTBOT_STAGING` (from `.paas/config.yml`)
 - `INPUT_CERTBOT_AUTO_RENEW` (from `.paas/config.yml`)
@@ -238,31 +260,21 @@ export INPUT_DASHBOARD_URL="http://127.0.0.1:7000"
 export INPUT_DASHBOARD_USER="<DASHBOARD_USER>"
 export INPUT_PUBLIC_DOMAIN="<APP_PUBLIC_DOMAIN>"
 export INPUT_PROXY_TARGET_PORT="7000"
-export INPUT_USE_TLS="true"
+export INPUT_USE_TLS="false"
 export INPUT_CERTBOT_EMAIL="<CERTBOT_EMAIL>"
 export INPUT_CERTBOT_STAGING="false"
 export INPUT_CERTBOT_AUTO_RENEW="true"
-export INPUT_HEALTHCHECK_URL="https://<APP_PUBLIC_DOMAIN>/api/health"
+export INPUT_HEALTHCHECK_URL=""
 ```
 
 ### Beginner step-by-step
 
 ```bash
-./paas.exe validate bootstrap-direct
+bash ./.paas/run.sh bootstrap-direct --dry-run
 ```
 
 ```bash
-env -i \
-  HOME="$HOME" \
-  USERPROFILE="$USERPROFILE" \
-  HOMEDRIVE="$HOMEDRIVE" \
-  HOMEPATH="$HOMEPATH" \
-  PATH="$PATH" \
-  TERM="${TERM:-xterm-256color}" \
-  LANG="${LANG:-en_US.UTF-8}" \
-  SSH_AUTH_SOCK="$SSH_AUTH_SOCK" \
-  SSH_AGENT_PID="$SSH_AGENT_PID" \
-  ./paas.exe run bootstrap-direct
+bash ./.paas/run.sh bootstrap-direct
 ```
 
 ### What happens internally
@@ -272,14 +284,20 @@ env -i \
 - Builds image on server.
 - Renders `docker-compose.yml` with `APP_IMAGE=<app>:<tag>`.
 - Creates app through the old bootstrap controller.
-- Writes platform TLS settings through `PUT /api/settings` before app TLS is enabled.
-- Configures domain/port/tls.
+- Writes platform TLS settings through `PUT /api/settings` so later TLS enablement is ready.
+- Configures domain/port and keeps the first deploy on plain HTTP.
 - Triggers first deploy.
 - Verifies the new API-only dashboard at `INPUT_DASHBOARD_URL`.
 
 ### Post-step action
 
 Take the printed `APP_ID` and place it into `.paas/config.yml` as `INPUT_APP_ID`.
+
+If you want HTTPS after the first bootstrap:
+
+1. Confirm the domain is already reachable over plain HTTP.
+2. Set `INPUT_USE_TLS="true"`.
+3. Run `deploy-direct` again, or call `PUT /api/apps/<APP_ID>/config` manually through the API.
 
 ---
 
@@ -296,6 +314,9 @@ Use when app is already created and you want fast updates.
 - `INPUT_DASHBOARD_USER` (from `.paas/config.yml`)
 - `INPUT_DASHBOARD_PASS` (environment variable recommended)
 - `INPUT_TAG` (optional, can pass in environment as override)
+- `INPUT_PUBLIC_DOMAIN` (from `.paas/config.yml`)
+- `INPUT_PROXY_TARGET_PORT` (from `.paas/config.yml`)
+- `INPUT_USE_TLS` (from `.paas/config.yml`)
 
 ### Ready-to-run setup snippet
 
@@ -305,27 +326,20 @@ export INPUT_APP_NAME="<APP_NAME>"
 export INPUT_DASHBOARD_URL="http://127.0.0.1:7000"
 export INPUT_DASHBOARD_USER="<DASHBOARD_USER>"
 export INPUT_APP_ID="<APP_ID>"
+export INPUT_PUBLIC_DOMAIN="<APP_PUBLIC_DOMAIN>"
+export INPUT_PROXY_TARGET_PORT="7000"
+export INPUT_USE_TLS="true"     # set true only after HTTP publication works
 export INPUT_TAG="sha-<SHORT_SHA>"   # optional override
 ```
 
 ### Step-by-step
 
 ```bash
-./paas.exe validate deploy-direct
+bash ./.paas/run.sh deploy-direct --dry-run
 ```
 
 ```bash
-env -i \
-  HOME="$HOME" \
-  USERPROFILE="$USERPROFILE" \
-  HOMEDRIVE="$HOMEDRIVE" \
-  HOMEPATH="$HOMEPATH" \
-  PATH="$PATH" \
-  TERM="${TERM:-xterm-256color}" \
-  LANG="${LANG:-en_US.UTF-8}" \
-  SSH_AUTH_SOCK="$SSH_AUTH_SOCK" \
-  SSH_AGENT_PID="$SSH_AGENT_PID" \
-  ./paas.exe run deploy-direct
+bash ./.paas/run.sh deploy-direct
 ```
 
 ### What happens internally
@@ -333,6 +347,7 @@ env -i \
 - Uploads source and builds image on server.
 - Renders compose with local image tag.
 - Updates existing dashboard app (`PUT /api/apps/<APP_ID>`).
+- Synchronizes public domain, proxy port, and TLS flag via `PUT /api/apps/<APP_ID>/config`.
 - Triggers deploy.
 
 ---
@@ -353,6 +368,9 @@ Use when you want artifacts in private/public registry and immutable remote tags
 - `INPUT_IMAGE_REPOSITORY` (from `.paas/config.yml`)
 - `INPUT_REGISTRY_USERNAME` (environment)
 - `INPUT_REGISTRY_PASSWORD` (environment)
+- `INPUT_PUBLIC_DOMAIN` (from `.paas/config.yml`)
+- `INPUT_PROXY_TARGET_PORT` (from `.paas/config.yml`)
+- `INPUT_USE_TLS` (from `.paas/config.yml`)
 
 ### Ready-to-run setup snippet
 
@@ -362,6 +380,9 @@ export INPUT_APP_NAME="<APP_NAME>"
 export INPUT_DASHBOARD_URL="http://127.0.0.1:7000"
 export INPUT_DASHBOARD_USER="<DASHBOARD_USER>"
 export INPUT_APP_ID="<APP_ID>"
+export INPUT_PUBLIC_DOMAIN="<APP_PUBLIC_DOMAIN>"
+export INPUT_PROXY_TARGET_PORT="7000"
+export INPUT_USE_TLS="true"     # set true only after HTTP publication works
 export INPUT_REGISTRY_HOST="<REGISTRY_HOST>"
 export INPUT_IMAGE_REPOSITORY="<REGISTRY_NAMESPACE>/<REPOSITORY>"
 export INPUT_REGISTRY_USERNAME="<REGISTRY_USERNAME>"
@@ -547,14 +568,15 @@ Use this as a 1-minute runbook before first deploy of any new app.
 - [ ] Create/verify `~/.config/paas/servers.yml` with correct `server`, `user`, `key`, `dashboard_user`, `dashboard_pass`.
 - [ ] Verify SSH key: `ssh root@<SERVER_HOST>`.
 - [ ] Validate extensions: `./paas.exe validate bootstrap-direct` and `./paas.exe validate deploy-direct`.
-- [ ] Run first deploy: `env -i ... ./paas.exe run bootstrap-direct`.
+- [ ] Run first deploy: `bash ./.paas/run.sh bootstrap-direct`.
 - [ ] Save printed `APP_ID` into `.paas/config.yml` as `INPUT_APP_ID`.
-- [ ] Run checks: `curl -u "${INPUT_DASHBOARD_USER}:${INPUT_DASHBOARD_PASS}" "${INPUT_DASHBOARD_URL}/api/apps/${INPUT_APP_ID}"`, `curl -I "https://<APP_PUBLIC_DOMAIN>/"`, `docker logs --tail 120 dashboard`.
+- [ ] Run checks: `curl -u "${INPUT_DASHBOARD_USER}:${INPUT_DASHBOARD_PASS}" "${INPUT_DASHBOARD_URL}/api/apps/${INPUT_APP_ID}"`, `curl -I "http://<APP_PUBLIC_DOMAIN>/"`, `docker logs --tail 120 dashboard`.
+- [ ] After plain HTTP works, set `INPUT_USE_TLS=true` and run `deploy-direct` to request the certificate.
 
 From next release onward:
 
 - [ ] Update code.
-- [ ] Run update deploy: `env -i ... ./paas.exe run deploy-direct`.
+- [ ] Run update deploy: `bash ./.paas/run.sh deploy-direct`.
 
 ---
 
@@ -577,13 +599,13 @@ defaults:
   INPUT_DASHBOARD_USER: <DASHBOARD_USER>
   INPUT_DASHBOARD_PASS: <DASHBOARD_PASSWORD>
 
-  # Optional: local smoke test runs on the operator machine, so use a public URL here
-  INPUT_HEALTHCHECK_URL: "https://<APP_PUBLIC_DOMAIN>/api/health"
+  # Optional public smoke test. Leave empty for first bootstrap.
+  INPUT_HEALTHCHECK_URL: ""
 
   # App routing for API-only dashboard on port 7000
   INPUT_PUBLIC_DOMAIN: <APP_PUBLIC_DOMAIN>
   INPUT_PROXY_TARGET_PORT: "7000"
-  INPUT_USE_TLS: "true"
+  INPUT_USE_TLS: "false"
   INPUT_CERTBOT_EMAIL: <CERTBOT_EMAIL>
   INPUT_CERTBOT_STAGING: "false"
   INPUT_CERTBOT_AUTO_RENEW: "true"
@@ -611,3 +633,12 @@ export INPUT_REGISTRY_PASSWORD="<REGISTRY_PASSWORD>"
 
 - Use production path as default in `.paas` (`docker-compose.yml`).
 - If you later add `docker-compose.local.yml`, keep local overrides separate for development only.
+
+### Line endings for shell scripts
+
+To avoid `/usr/bin/env: 'bash\\r': No such file or directory`, keep shell scripts in LF format.
+This repo enforces that through `.gitattributes` with:
+
+```gitattributes
+*.sh text eol=lf
+```
