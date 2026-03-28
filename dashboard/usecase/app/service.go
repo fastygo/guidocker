@@ -361,14 +361,6 @@ func (s *Service) canRemoveAppCertificate(ctx context.Context, appID, domainValu
 		return true, nil, nil
 	}
 
-	settings, _, err := s.loadPlatformSettings(ctx)
-	if err != nil {
-		return false, nil, err
-	}
-	if normalizeDomain(settings.AdminDomain) == domainValue {
-		return false, []string{"certificate removal skipped for admin domain"}, nil
-	}
-
 	apps, err := s.repository.List(ctx)
 	if err != nil {
 		return false, nil, err

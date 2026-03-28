@@ -750,10 +750,6 @@ func TestDashboardHandler_APISettings_Get(t *testing.T) {
 	handler.SetPlatformSettingsUseCase(&fakePlatformSettingsUseCase{
 		getSettingsFn: func(context.Context) (*domain.PlatformSettings, error) {
 			return &domain.PlatformSettings{
-				AdminHost:            "127.0.0.1",
-				AdminPort:            3001,
-				AdminDomain:          "admin.example.com",
-				AdminUseTLS:          true,
 				CertbotEmail:         "ops@example.com",
 				CertbotEnabled:       true,
 				CertbotStaging:       true,
@@ -775,7 +771,7 @@ func TestDashboardHandler_APISettings_Get(t *testing.T) {
 	if err := json.NewDecoder(recorder.Body).Decode(&payload); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if payload.AdminHost != "127.0.0.1" || payload.AdminPort != 3001 {
+	if payload.CertbotEmail != "ops@example.com" || !payload.CertbotEnabled {
 		t.Fatalf("unexpected platform settings payload: %+v", payload)
 	}
 }
@@ -791,10 +787,6 @@ func TestDashboardHandler_APISettings_Put(t *testing.T) {
 	})
 
 	body := bytes.NewBufferString(`{
-		"admin_host": "0.0.0.0",
-		"admin_port": 3200,
-		"admin_domain": "admin.example.com",
-		"admin_use_tls": true,
 		"certbot_email": "ops@example.com",
 		"certbot_enabled": true,
 		"certbot_staging": false,
@@ -809,7 +801,7 @@ func TestDashboardHandler_APISettings_Put(t *testing.T) {
 	if recorder.Result().StatusCode != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Result().StatusCode)
 	}
-	if saved.AdminPort != 3200 || !saved.AdminUseTLS || !saved.CertbotEnabled {
+	if saved.CertbotEmail != "ops@example.com" || !saved.CertbotEnabled || saved.CertbotStaging {
 		t.Fatalf("unexpected saved settings: %+v", saved)
 	}
 }

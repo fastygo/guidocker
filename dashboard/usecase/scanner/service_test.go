@@ -188,7 +188,7 @@ func TestRunScan_StaleAdmin(t *testing.T) {
 						"/opt/stacks",
 					},
 					Envs:   []string{"PAAS_ADMIN_USER=admin", "STACKS_DIR=/opt/stacks"},
-					Ports:  []string{"3000->80/tcp"},
+					Ports:  []string{"7000->80/tcp"},
 					Status: domain.ContainerStatusRunning,
 				},
 			}, nil
@@ -244,7 +244,7 @@ func TestRunScan_CleanupCmds(t *testing.T) {
 					Name:   "dashboard-old",
 					Image:  "example/dashboard:latest",
 					Mounts: []string{"/var/run/docker.sock", "/opt/stacks"},
-					Ports:  []string{"3000->3000/tcp"},
+					Ports:  []string{"7000->7000/tcp"},
 					Envs:   []string{"PAAS_ADMIN_USER=admin"},
 					Status: domain.ContainerStatusRunning,
 				},

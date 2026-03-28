@@ -16,13 +16,6 @@ type Service struct {
 
 // NewPlatformSettingsService creates a service with default fallback values.
 func NewPlatformSettingsService(repository domain.PlatformSettingsRepository, fallback domain.PlatformSettings) *Service {
-	if fallback.AdminPort == 0 {
-		fallback.AdminPort = 3000
-	}
-	if strings.TrimSpace(fallback.AdminHost) == "" {
-		fallback.AdminHost = "0.0.0.0"
-	}
-
 	return &Service{
 		repository: repository,
 		fallback:   fallback,
@@ -62,24 +55,6 @@ func (s *Service) UpdatePlatformSettings(ctx context.Context, settings domain.Pl
 		current = &domain.PlatformSettings{}
 	}
 
-	settings.AdminHost = strings.TrimSpace(settings.AdminHost)
-	if settings.AdminHost == "" {
-		settings.AdminHost = current.AdminHost
-		if settings.AdminHost == "" {
-			settings.AdminHost = s.fallback.AdminHost
-		}
-	}
-
-	if settings.AdminPort <= 0 {
-		settings.AdminPort = current.AdminPort
-		if settings.AdminPort <= 0 {
-			settings.AdminPort = s.fallback.AdminPort
-		}
-	}
-
-	if strings.TrimSpace(settings.AdminDomain) == "" {
-		settings.AdminDomain = current.AdminDomain
-	}
 	settings.CertbotEmail = strings.TrimSpace(settings.CertbotEmail)
 	if settings.CertbotEmail == "" {
 		settings.CertbotEmail = current.CertbotEmail
@@ -100,11 +75,20 @@ func (s *Service) UpdatePlatformSettings(ctx context.Context, settings domain.Pl
 }
 
 func mergePlatformSettings(stored, fallback domain.PlatformSettings) domain.PlatformSettings {
-	if strings.TrimSpace(stored.AdminHost) == "" {
-		stored.AdminHost = fallback.AdminHost
+	if strings.TrimSpace(stored.CertbotEmail) == "" {
+		stored.CertbotEmail = strings.TrimSpace(fallback.CertbotEmail)
 	}
-	if stored.AdminPort == 0 {
-		stored.AdminPort = fallback.AdminPort
+	if !stored.CertbotEnabled {
+		stored.CertbotEnabled = fallback.CertbotEnabled
+	}
+	if !stored.CertbotStaging {
+		stored.CertbotStaging = fallback.CertbotStaging
+	}
+	if !stored.CertbotAutoRenew {
+		stored.CertbotAutoRenew = fallback.CertbotAutoRenew
+	}
+	if !stored.CertbotTermsAccepted {
+		stored.CertbotTermsAccepted = fallback.CertbotTermsAccepted
 	}
 	return stored
 }

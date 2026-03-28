@@ -473,7 +473,7 @@ func isStaleAdmin(detail domain.ContainerDetail) bool {
 	}
 
 	for _, port := range detail.Ports {
-		if strings.Contains(port, "3000") {
+		if strings.Contains(port, "7000") {
 			matches++
 			break
 		}
@@ -504,7 +504,7 @@ func classifyStaleAdminConfidence(detail domain.ContainerDetail) domain.Confiden
 		matches++
 	}
 	for _, port := range detail.Ports {
-		if strings.Contains(port, "3000") {
+		if strings.Contains(port, "7000") {
 			matches++
 			break
 		}

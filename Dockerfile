@@ -55,7 +55,7 @@ ENV SERVER_HOST=0.0.0.0 \
     PAAS_ADMIN_PASS=admin@123 \
     STACKS_DIR=/opt/stacks \
     BOLT_DB_FILE=/opt/stacks/.paas.db \
-    DASHBOARD_DATA_FILE=/app/data/dashboard.json \
+    DASHBOARD_DATA_FILE=/opt/stacks/dashboard-data.json \
     DASHBOARD_MODE=api
 
 VOLUME ["/opt/stacks"]

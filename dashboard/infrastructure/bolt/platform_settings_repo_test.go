@@ -23,11 +23,8 @@ func TestPlatformSettingsRepository_LoadReturnsDefaultWhenMissing(t *testing.T) 
 	if err != nil {
 		t.Fatalf("LoadPlatformSettings() error = %v", err)
 	}
-	if settings.AdminHost != "" {
-		t.Fatalf("expected empty admin host for missing settings, got %q", settings.AdminHost)
-	}
-	if settings.AdminPort != 0 {
-		t.Fatalf("expected empty admin port for missing settings, got %d", settings.AdminPort)
+	if settings.CertbotEmail != "" {
+		t.Fatalf("expected empty certbot email for missing settings, got %q", settings.CertbotEmail)
 	}
 }
 
@@ -52,8 +49,8 @@ func TestPlatformSettingsRepository_CompatibleWithAppDatabase(t *testing.T) {
 	if settings == nil {
 		t.Fatal("expected platform settings struct, got nil")
 	}
-	if settings.AdminHost != "" {
-		t.Fatalf("expected empty admin host for legacy DB, got %q", settings.AdminHost)
+	if settings.CertbotEmail != "" {
+		t.Fatalf("expected empty certbot email for legacy DB, got %q", settings.CertbotEmail)
 	}
 }
 
@@ -66,12 +63,10 @@ func TestPlatformSettingsRepository_SaveAndLoad(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Second)
 	expected := &domain.PlatformSettings{
-		AdminHost:   "127.0.0.1",
-		AdminPort:   3000,
-		AdminDomain: "example.com",
-		AdminUseTLS: true,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		CertbotEmail:        "ops@example.com",
+		CertbotEnabled:      true,
+		CreatedAt:           now,
+		UpdatedAt:           now,
 	}
 
 	if err := repo.SavePlatformSettings(context.Background(), expected); err != nil {
@@ -82,17 +77,11 @@ func TestPlatformSettingsRepository_SaveAndLoad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadPlatformSettings() error = %v", err)
 	}
-	if loaded.AdminHost != expected.AdminHost {
-		t.Fatalf("expected admin host %q, got %q", expected.AdminHost, loaded.AdminHost)
+	if loaded.CertbotEmail != expected.CertbotEmail {
+		t.Fatalf("expected certbot email %q, got %q", expected.CertbotEmail, loaded.CertbotEmail)
 	}
-	if loaded.AdminPort != expected.AdminPort {
-		t.Fatalf("expected admin port %d, got %d", expected.AdminPort, loaded.AdminPort)
-	}
-	if loaded.AdminDomain != expected.AdminDomain {
-		t.Fatalf("expected admin domain %q, got %q", expected.AdminDomain, loaded.AdminDomain)
-	}
-	if loaded.AdminUseTLS != expected.AdminUseTLS {
-		t.Fatalf("expected admin tls %v, got %v", expected.AdminUseTLS, loaded.AdminUseTLS)
+	if loaded.CertbotEnabled != expected.CertbotEnabled {
+		t.Fatalf("expected certbot enabled %v, got %v", expected.CertbotEnabled, loaded.CertbotEnabled)
 	}
 	if loaded.CreatedAt.IsZero() {
 		t.Fatalf("expected created at to be persisted")
@@ -111,17 +100,13 @@ func TestPlatformSettingsRepository_SaveAndLoad_WithCertbotFields(t *testing.T) 
 
 	now := time.Now().UTC().Truncate(time.Second)
 	expected := &domain.PlatformSettings{
-		AdminHost:           "127.0.0.1",
-		AdminPort:           3200,
-		AdminDomain:         "admin.example.com",
-		AdminUseTLS:         true,
-		CertbotEmail:        "ops@example.com",
-		CertbotEnabled:      true,
-		CertbotStaging:      true,
-		CertbotAutoRenew:    true,
+		CertbotEmail:         "ops@example.com",
+		CertbotEnabled:       true,
+		CertbotStaging:       true,
+		CertbotAutoRenew:     true,
 		CertbotTermsAccepted: true,
-		CreatedAt:           now,
-		UpdatedAt:           now,
+		CreatedAt:            now,
+		UpdatedAt:            now,
 	}
 
 	if err := repo.SavePlatformSettings(context.Background(), expected); err != nil {
@@ -158,8 +143,7 @@ func TestPlatformSettingsRepository_LoadLegacyDataWithoutCertbotFields(t *testin
 	defer func() { _ = repo.Close() }()
 
 	legacy := map[string]interface{}{
-		"admin_host": "127.0.0.1",
-		"admin_port": 3000,
+		"certbot_email": "ops@example.com",
 	}
 	raw, err := json.Marshal(legacy)
 	if err != nil {
@@ -177,11 +161,8 @@ func TestPlatformSettingsRepository_LoadLegacyDataWithoutCertbotFields(t *testin
 	if err != nil {
 		t.Fatalf("LoadPlatformSettings() error = %v", err)
 	}
-	if loaded.AdminHost != "127.0.0.1" {
-		t.Fatalf("expected admin host 127.0.0.1, got %q", loaded.AdminHost)
-	}
-	if loaded.CertbotEmail != "" {
-		t.Fatalf("expected empty certbot email for legacy settings, got %q", loaded.CertbotEmail)
+	if loaded.CertbotEmail != "ops@example.com" {
+		t.Fatalf("expected certbot email ops@example.com, got %q", loaded.CertbotEmail)
 	}
 	if loaded.CertbotEnabled {
 		t.Fatalf("expected legacy certbot enabled false")

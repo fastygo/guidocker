@@ -2,6 +2,7 @@ services:
   dashboard:
     image: ${APP_IMAGE:-paas-dashboard:main}
     restart: unless-stopped
+    read_only: true
     pid: host
     userns_mode: host
     security_opt:
@@ -12,6 +13,8 @@ services:
       - "127.0.0.1:7000:7000"
     expose:
       - "7000"
+    tmpfs:
+      - /tmp
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /:/host
@@ -28,6 +31,7 @@ services:
       DASHBOARD_AUTH_DISABLED: ${DASHBOARD_AUTH_DISABLED:-false}
       STACKS_DIR: /opt/stacks
       BOLT_DB_FILE: /opt/stacks/.paas.db
+      DASHBOARD_DATA_FILE: /opt/stacks/dashboard-data.json
       PAAS_APP_NETWORK: ${PAAS_APP_NETWORK:-paas-network}
       PAAS_HOST_ROOT: /host
       PAAS_NGINX_BINARY: /usr/sbin/nginx

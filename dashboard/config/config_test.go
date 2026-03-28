@@ -22,8 +22,8 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.Server.Host != "localhost" {
 		t.Fatalf("expected default host localhost, got %q", cfg.Server.Host)
 	}
-	if cfg.Server.Port != 3000 {
-		t.Fatalf("expected default port 3000, got %d", cfg.Server.Port)
+	if cfg.Server.Port != 7000 {
+		t.Fatalf("expected default port 7000, got %d", cfg.Server.Port)
 	}
 	if cfg.Data.DashboardFile != "data/dashboard.json" {
 		t.Fatalf("expected default dashboard data file, got %q", cfg.Data.DashboardFile)
@@ -86,7 +86,7 @@ func TestLoad_EnvOverrides(t *testing.T) {
 func TestLoad_InvalidPortFallsBackToDefault(t *testing.T) {
 	t.Setenv("PAAS_PORT", "not-a-number")
 	cfg := Load()
-	if cfg.Server.Port != 3000 {
-		t.Fatalf("expected fallback port 3000, got %d", cfg.Server.Port)
+	if cfg.Server.Port != 7000 {
+		t.Fatalf("expected fallback port 7000, got %d", cfg.Server.Port)
 	}
 }

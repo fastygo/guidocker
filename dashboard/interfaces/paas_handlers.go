@@ -33,14 +33,10 @@ type importRepoPayload struct {
 }
 
 type platformSettingsPayload struct {
-	AdminHost     string `json:"admin_host"`
-	AdminPort     int    `json:"admin_port"`
-	AdminDomain   string `json:"admin_domain"`
-	AdminUseTLS   bool   `json:"admin_use_tls"`
-	CertbotEmail  string `json:"certbot_email"`
-	CertbotEnabled bool  `json:"certbot_enabled"`
-	CertbotStaging bool  `json:"certbot_staging"`
-	CertbotAutoRenew bool `json:"certbot_auto_renew"`
+	CertbotEmail         string `json:"certbot_email"`
+	CertbotEnabled       bool   `json:"certbot_enabled"`
+	CertbotStaging       bool   `json:"certbot_staging"`
+	CertbotAutoRenew     bool   `json:"certbot_auto_renew"`
 	CertbotTermsAccepted bool `json:"certbot_terms_accepted"`
 }
 
@@ -186,14 +182,10 @@ func (h *DashboardHandler) APISettings(w http.ResponseWriter, r *http.Request) {
 		}
 
 		updated, err := h.platformSettingsUseCase.UpdatePlatformSettings(r.Context(), domain.PlatformSettings{
-			AdminHost:   payload.AdminHost,
-			AdminPort:   payload.AdminPort,
-			AdminDomain: payload.AdminDomain,
-			AdminUseTLS: payload.AdminUseTLS,
-			CertbotEmail: payload.CertbotEmail,
-			CertbotEnabled: payload.CertbotEnabled,
-			CertbotStaging: payload.CertbotStaging,
-			CertbotAutoRenew: payload.CertbotAutoRenew,
+			CertbotEmail:         payload.CertbotEmail,
+			CertbotEnabled:       payload.CertbotEnabled,
+			CertbotStaging:       payload.CertbotStaging,
+			CertbotAutoRenew:     payload.CertbotAutoRenew,
 			CertbotTermsAccepted: payload.CertbotTermsAccepted,
 		})
 		if err != nil {
@@ -507,7 +499,6 @@ func (h *DashboardHandler) writeAppError(w http.ResponseWriter, err error) {
 		errors.Is(err, domain.ErrTLSEmailRequired),
 		errors.Is(err, domain.ErrTLSAgreementRequired),
 		errors.Is(err, domain.ErrTLSRequiresCertbot),
-		errors.Is(err, domain.ErrAdminPortConflict),
 		errors.Is(err, domain.ErrDomainConflict),
 		errors.Is(err, domain.ErrManualCleanupRequired),
 		errors.Is(err, domain.ErrComposeConfigValidation):

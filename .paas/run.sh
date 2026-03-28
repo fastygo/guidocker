@@ -18,7 +18,7 @@ Behavior:
 
 Example:
   bash ./.paas/run.sh bootstrap-direct
-  INPUT_USE_TLS=true bash ./.paas/run.sh deploy-direct
+  INPUT_TAG=sha-override bash ./.paas/run.sh deploy-direct
   bash ./.paas/run.sh bootstrap-direct --dry-run
 EOF
 }

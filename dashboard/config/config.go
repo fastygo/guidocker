@@ -54,7 +54,7 @@ func Load() *Config {
 	return &Config{
 		Server: ServerConfig{
 			Host: getEnv("SERVER_HOST", "localhost"),
-			Port: getEnvAsIntAny([]string{"PAAS_PORT", "SERVER_PORT"}, 3000),
+			Port: getEnvAsIntAny([]string{"PAAS_PORT", "SERVER_PORT"}, 7000),
 		},
 		Data: DataConfig{
 			DashboardFile: getEnv("DASHBOARD_DATA_FILE", "data/dashboard.json"),

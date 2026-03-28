@@ -393,7 +393,7 @@ func TestService_DeleteApp_RemovesRoutingEnvAndCertBeforeRecordDeletion(t *testi
 	}
 }
 
-func TestService_UpdateAppConfig_AllowsInternalProxyPortMatchingAdminPort(t *testing.T) {
+func TestService_UpdateAppConfig_AllowsProxyPortWithoutPlatformSettings(t *testing.T) {
 	repo := newFakeAppRepository()
 	baseDir := t.TempDir()
 	repo.items["app-1"] = &domain.App{
@@ -406,12 +406,7 @@ func TestService_UpdateAppConfig_AllowsInternalProxyPortMatchingAdminPort(t *tes
 		UpdatedAt:   time.Now().UTC(),
 	}
 
-	service := NewAppService(repo, &fakeDockerRepository{}, nil, baseDir).
-		WithPlatformSettingsUseCase(&fakePlatformSettingsUseCase{
-			settings: &domain.PlatformSettings{
-				AdminPort: 3000,
-			},
-		})
+	service := NewAppService(repo, &fakeDockerRepository{}, nil, baseDir)
 
 	_, err := service.UpdateAppConfig(context.Background(), "app-1", domain.AppConfig{
 		PublicDomain:    "demo.example.com",
@@ -830,7 +825,7 @@ func TestService_DeleteApp_BlockingExternalContainerRequiresManualCleanup(t *tes
 	}
 }
 
-func TestService_DeleteApp_DomainOwnedByAdminSkipsCertificateRemoval(t *testing.T) {
+func TestService_DeleteApp_RemovesCertificateForDeletedDomain(t *testing.T) {
 	repo := newFakeAppRepository()
 	baseDir := t.TempDir()
 	stackDir := filepath.Join(baseDir, "app-1")
@@ -857,11 +852,6 @@ func TestService_DeleteApp_DomainOwnedByAdminSkipsCertificateRemoval(t *testing.
 	certRemoved := false
 
 	service := NewAppService(repo, &fakeDockerRepository{}, nil, baseDir).
-		WithPlatformSettingsUseCase(&fakePlatformSettingsUseCase{
-			settings: &domain.PlatformSettings{
-				AdminDomain: "admin.example.com",
-			},
-		}).
 		WithHostManagers(&fakeHostManager{
 		removeRoutingFn: func(_ context.Context, app *domain.App, _ domain.PlatformSettings) error {
 			routingCalls++
@@ -884,8 +874,8 @@ func TestService_DeleteApp_DomainOwnedByAdminSkipsCertificateRemoval(t *testing.
 	if routingCalls != 1 {
 		t.Fatalf("expected one routing cleanup call, got %d", routingCalls)
 	}
-	if certRemoved {
-		t.Fatalf("expected certificate removal to be skipped for admin domain")
+	if !certRemoved {
+		t.Fatalf("expected certificate removal to run for deleted domain")
 	}
 	if _, ok := repo.items["app-1"]; ok {
 		t.Fatalf("expected app removed from repository")

@@ -18,8 +18,8 @@ DOCKERFILE ?= Dockerfile
 CONTAINER_NAME ?= dashboard
 DOCKER_GID ?= 999
 
-SERVER_HOST ?= 0.0.0.0
-PAAS_PORT ?= 3000
+SERVER_HOST ?= 127.0.0.1
+PAAS_PORT ?= 7000
 PAAS_ADMIN_USER ?= admin
 PAAS_ADMIN_PASS ?= admin@123
 DASHBOARD_AUTH_DISABLED ?= false
@@ -116,7 +116,7 @@ docker-run:
 		--group-add $(DOCKER_GID) \
 		--pid host \
 		--network paas-network \
-		-p $(PAAS_PORT):3000 \
+		-p 127.0.0.1:$(PAAS_PORT):7000 \
 		-v /var/run/docker.sock:/var/run/docker.sock \
 		-v /:/host \
 		-v $(STACKS_DIR):/opt/stacks \
@@ -125,7 +125,8 @@ docker-run:
 		-v /var/lib/letsencrypt:/var/lib/letsencrypt \
 		-v /var/log/letsencrypt:/var/log/letsencrypt \
 		-e SERVER_HOST=0.0.0.0 \
-		-e PAAS_PORT=3000 \
+		-e PAAS_PORT=7000 \
+		-e DASHBOARD_MODE=api \
 		-e PAAS_ADMIN_USER=$(PAAS_ADMIN_USER) \
 		-e PAAS_ADMIN_PASS=$(PAAS_ADMIN_PASS) \
 		-e DASHBOARD_AUTH_DISABLED=$(DASHBOARD_AUTH_DISABLED) \

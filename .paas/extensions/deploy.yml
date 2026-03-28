@@ -1,16 +1,12 @@
 id: deploy
-name: Build on Server and Deploy
-description: Upload source via SSH, build image on server, push to registry, deploy via dashboard API
+name: Update Internal Dashboard Via Registry
+description: Upload source via SSH, build the dashboard image on the server, push it to a registry, and update the internal-only dashboard runtime
 
 inputs:
   - name: app_name
     label: Application name
     type: text
     default: paas-dashboard
-  - name: app_id
-    label: Application ID
-    type: text
-    required: true
   - name: registry_host
     label: Registry host
     type: text
@@ -39,24 +35,8 @@ inputs:
     label: Dashboard password
     type: password
     required: true
-  - name: public_domain
-    label: Public domain
-    type: text
-    required: true
-  - name: proxy_target_port
-    label: Proxy target port
-    type: text
-    default: "7000"
-  - name: use_tls
-    label: Use TLS
-    type: text
-    default: "false"
   - name: tag
     label: Override image tag (leave empty for git SHA)
-    type: text
-    default: ""
-  - name: healthcheck_url
-    label: Healthcheck URL (leave empty to skip)
     type: text
     default: ""
 
@@ -114,7 +94,7 @@ steps:
         -t "${STEP_IMAGE_REF}:${STEP_IMAGE_TAG}" \
         -t "${STEP_IMAGE_REF}:main" \
         .
-    description: "Build Docker image on server"
+    description: "Build dashboard image on server"
 
   - id: push_sha_image
     env:
@@ -132,123 +112,62 @@ steps:
       docker push "${STEP_IMAGE_REF}:main"
     description: "Push main tag"
 
-  - id: render_compose
+  - id: prepare_runtime_dir
+    env:
+      PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    run: |
+      set -eu
+      mkdir -p "/opt/${INPUT_APP_NAME}"
+    description: "Prepare runtime directory"
+
+  - id: render_runtime_compose
     env:
       PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     run: |
       set -eu
       cd /tmp/build-${INPUT_APP_NAME}
-      APP_IMAGE="${STEP_IMAGE_REF}:${STEP_IMAGE_TAG}" docker compose -f docker-compose.yml config > /tmp/rendered-compose.yml
-      echo "Rendered compose:"
-      head -20 /tmp/rendered-compose.yml
-    description: "Render compose YAML"
+      docker_gid=$(getent group docker | cut -d: -f3 || true)
+      if [ -z "${docker_gid}" ]; then
+        docker_gid=999
+      fi
+      APP_IMAGE="${STEP_IMAGE_REF}:${STEP_IMAGE_TAG}" \
+      DOCKER_GID="${docker_gid}" \
+      PAAS_ADMIN_USER="${INPUT_DASHBOARD_USER}" \
+      PAAS_ADMIN_PASS="${INPUT_DASHBOARD_PASS}" \
+      docker compose -f docker-compose.yml config > "/opt/${INPUT_APP_NAME}/docker-compose.yml"
+      echo "Rendered runtime compose:"
+      head -20 "/opt/${INPUT_APP_NAME}/docker-compose.yml"
+    description: "Render runtime compose"
 
-  - id: build_payload
+  - id: start_dashboard
     env:
       PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     run: |
       set -eu
-      jq -n \
-        --arg name "${INPUT_APP_NAME}" \
-        --rawfile compose_yaml /tmp/rendered-compose.yml \
-        '{name: $name, compose_yaml: $compose_yaml}' > /tmp/dashboard-update.json
-    description: "Build dashboard payload"
+      docker compose -p "${INPUT_APP_NAME}" -f "/opt/${INPUT_APP_NAME}/docker-compose.yml" up -d --remove-orphans
+    description: "Update dashboard runtime"
 
   - id: verify_dashboard_api
     env:
       PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     run: |
       set -eu
-      curl --fail --show-error --silent \
-        -u "${INPUT_DASHBOARD_USER}:${INPUT_DASHBOARD_PASS}" \
-        "${INPUT_DASHBOARD_URL}/api/health" >/dev/null
-    description: "Verify steady-state dashboard API"
-
-  - id: build_app_config_payload
-    env:
-      PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-    run: |
-      set -eu
-      jq -n \
-        --arg public_domain "${INPUT_PUBLIC_DOMAIN}" \
-        --argjson proxy_target_port "${INPUT_PROXY_TARGET_PORT}" \
-        --argjson use_tls "${INPUT_USE_TLS}" \
-        '{
-          public_domain: $public_domain,
-          proxy_target_port: $proxy_target_port,
-          use_tls: $use_tls
-        }' > /tmp/app-config.json
-    description: "Build app routing payload"
-
-  - id: update_dashboard
-    env:
-      PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-    run: |
-      set -eu
-      if ! curl --fail --show-error --silent \
-        -u "${INPUT_DASHBOARD_USER}:${INPUT_DASHBOARD_PASS}" \
-        -X PUT "${INPUT_DASHBOARD_URL}/api/apps/${INPUT_APP_ID}" \
-        -H 'Content-Type: application/json' \
-        --data @/tmp/dashboard-update.json; then
-        echo "--- Dashboard logs ---"
-        curl --show-error --silent \
+      for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+        if curl --fail --show-error --silent \
           -u "${INPUT_DASHBOARD_USER}:${INPUT_DASHBOARD_PASS}" \
-          "${INPUT_DASHBOARD_URL}/api/apps/${INPUT_APP_ID}/logs?lines=60" || true
-        exit 1
-      fi
-    description: "Update dashboard compose"
-
-  - id: configure_app
-    env:
-      PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-    run: |
-      set -eu
-      curl --fail --show-error --silent \
-        -u "${INPUT_DASHBOARD_USER}:${INPUT_DASHBOARD_PASS}" \
-        -X PUT "${INPUT_DASHBOARD_URL}/api/apps/${INPUT_APP_ID}/config" \
-        -H 'Content-Type: application/json' \
-        --data @/tmp/app-config.json
-    description: "Sync app routing settings"
-
-  - id: trigger_deploy
-    env:
-      PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-    run: |
-      set -eu
-      if ! curl --fail --show-error --silent \
-        -u "${INPUT_DASHBOARD_USER}:${INPUT_DASHBOARD_PASS}" \
-        -X POST "${INPUT_DASHBOARD_URL}/api/apps/${INPUT_APP_ID}/deploy"; then
-        echo "--- Dashboard logs ---"
-        curl --show-error --silent \
-          -u "${INPUT_DASHBOARD_USER}:${INPUT_DASHBOARD_PASS}" \
-          "${INPUT_DASHBOARD_URL}/api/apps/${INPUT_APP_ID}/logs?lines=60" || true
-        exit 1
-      fi
-    description: "Trigger deploy"
+          "${INPUT_DASHBOARD_URL}/api/health" >/dev/null; then
+          exit 0
+        fi
+        sleep 5
+      done
+      echo "Dashboard API did not become ready at ${INPUT_DASHBOARD_URL}"
+      exit 1
+    description: "Verify dashboard API"
 
   - id: cleanup
     env:
       PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     run: |
-      rm -rf /tmp/build-${INPUT_APP_NAME} /tmp/rendered-compose.yml /tmp/dashboard-update.json /tmp/app-config.json
+      rm -rf /tmp/build-${INPUT_APP_NAME}
     description: "Clean up build directory"
     ignore_error: true
-
-  - id: smoke_test
-    env:
-      PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-    run: |
-      set -eu
-      for attempt in 1 2 3 4 5 6; do
-        if curl --fail --show-error --silent "${INPUT_HEALTHCHECK_URL}"; then
-          echo ""
-          echo "Health check passed"
-          exit 0
-        fi
-        sleep 5
-      done
-      echo "Health check failed after 30s"
-      exit 1
-    description: "Smoke test"
-    local: true
-    when: INPUT_HEALTHCHECK_URL != ""

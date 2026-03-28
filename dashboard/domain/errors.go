@@ -11,7 +11,6 @@ var (
 	ErrDomainConflict          = errors.New("domain already in use")
 	ErrInvalidDomain           = errors.New("invalid domain")
 	ErrInvalidProxyPort        = errors.New("invalid proxy target port")
-	ErrAdminPortConflict       = errors.New("proxy target port conflicts with admin port")
 	ErrInvalidAppName          = errors.New("invalid app name")
 	ErrComposeNoServices       = errors.New("compose yaml must contain a 'services:' key")
 	ErrInvalidComposeYAML      = errors.New("invalid compose yaml")

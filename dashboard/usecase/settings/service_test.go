@@ -34,66 +34,58 @@ func (r *fakePlatformSettingsRepository) SavePlatformSettings(_ context.Context,
 func TestSettingsService_GetPlatformSettings_AppliesFallbackDefaults(t *testing.T) {
 	repo := &fakePlatformSettingsRepository{}
 	service := NewPlatformSettingsService(repo, domain.PlatformSettings{
-		AdminHost: "127.0.0.1",
-		AdminPort: 3000,
+		CertbotEmail:        "ops@example.com",
+		CertbotEnabled:      true,
+		CertbotAutoRenew:    true,
+		CertbotTermsAccepted: true,
 	})
 
 	settings, err := service.GetPlatformSettings(context.Background())
 	if err != nil {
 		t.Fatalf("GetPlatformSettings() error = %v", err)
 	}
-	if settings.AdminHost != "127.0.0.1" {
-		t.Fatalf("expected admin host 127.0.0.1, got %q", settings.AdminHost)
+	if settings.CertbotEmail != "ops@example.com" {
+		t.Fatalf("expected fallback certbot email, got %q", settings.CertbotEmail)
 	}
-	if settings.AdminPort != 3000 {
-		t.Fatalf("expected admin port 3000, got %d", settings.AdminPort)
+	if !settings.CertbotEnabled || !settings.CertbotAutoRenew || !settings.CertbotTermsAccepted {
+		t.Fatalf("expected fallback certbot flags to be applied: %+v", settings)
 	}
 }
 
 func TestSettingsService_UpdatePlatformSettings_PersistsAndMerges(t *testing.T) {
 	repo := &fakePlatformSettingsRepository{
 		settings: &domain.PlatformSettings{
-			AdminHost: "0.0.0.0",
-			AdminPort: 3000,
+			CertbotEmail: "ops@example.com",
 		},
 	}
-	service := NewPlatformSettingsService(repo, domain.PlatformSettings{
-		AdminHost: "127.0.0.1",
-		AdminPort: 3010,
-	})
+	service := NewPlatformSettingsService(repo, domain.PlatformSettings{})
 
 	updated, err := service.UpdatePlatformSettings(context.Background(), domain.PlatformSettings{
-		AdminDomain: "dashboard.local",
-		AdminUseTLS: true,
+		CertbotEnabled:       true,
+		CertbotStaging:       true,
+		CertbotAutoRenew:     true,
+		CertbotTermsAccepted: true,
 	})
 	if err != nil {
 		t.Fatalf("UpdatePlatformSettings() error = %v", err)
 	}
-	if updated.AdminHost != "0.0.0.0" {
-		t.Fatalf("expected existing admin host to be preserved, got %q", updated.AdminHost)
+	if updated.CertbotEmail != "ops@example.com" {
+		t.Fatalf("expected existing certbot email to be preserved, got %q", updated.CertbotEmail)
 	}
-	if updated.AdminPort != 3000 {
-		t.Fatalf("expected existing admin port to be preserved, got %d", updated.AdminPort)
-	}
-	if updated.AdminDomain != "dashboard.local" {
-		t.Fatalf("expected admin domain dashboard.local, got %q", updated.AdminDomain)
-}
-	if updated.AdminUseTLS != true {
-		t.Fatalf("expected admin tls enabled")
+	if !updated.CertbotEnabled || !updated.CertbotStaging || !updated.CertbotAutoRenew || !updated.CertbotTermsAccepted {
+		t.Fatalf("expected certbot flags enabled: %+v", updated)
 	}
 	if repo.saved == nil {
 		t.Fatal("expected repository SavePlatformSettings() to be called")
 	}
-	if repo.saved.AdminDomain != "dashboard.local" {
-		t.Fatalf("expected saved admin domain dashboard.local, got %q", repo.saved.AdminDomain)
+	if repo.saved.CertbotEmail != "ops@example.com" {
+		t.Fatalf("expected saved certbot email ops@example.com, got %q", repo.saved.CertbotEmail)
 	}
 }
 
 func TestSettingsService_UpdatePlatformSettings_UpdatesCertbotFlags(t *testing.T) {
 	repo := &fakePlatformSettingsRepository{
 		settings: &domain.PlatformSettings{
-			AdminHost:            "0.0.0.0",
-			AdminPort:            3000,
 			CertbotEmail:         "ops@example.com",
 			CertbotEnabled:       true,
 			CertbotStaging:       true,
@@ -101,13 +93,9 @@ func TestSettingsService_UpdatePlatformSettings_UpdatesCertbotFlags(t *testing.T
 			CertbotTermsAccepted: true,
 		},
 	}
-	service := NewPlatformSettingsService(repo, domain.PlatformSettings{
-		AdminHost: "127.0.0.1",
-		AdminPort: 3010,
-	})
+	service := NewPlatformSettingsService(repo, domain.PlatformSettings{})
 
 	updated, err := service.UpdatePlatformSettings(context.Background(), domain.PlatformSettings{
-		AdminDomain:          "dashboard.local",
 		CertbotEmail:         "ops2@example.com",
 		CertbotEnabled:       false,
 		CertbotStaging:       false,

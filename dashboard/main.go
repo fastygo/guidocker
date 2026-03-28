@@ -15,44 +15,13 @@ import (
 	scanusecase "dashboard/usecase/scanner"
 	settingsusecase "dashboard/usecase/settings"
 	"dashboard/views"
-	"fmt"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 )
-
-func findFreePort(startPort int) (int, error) {
-	for port := startPort; port < startPort+100; port++ {
-		addr := fmt.Sprintf(":%d", port)
-		listener, err := net.Listen("tcp", addr)
-		if err == nil {
-			listener.Close()
-			return port, nil
-		}
-	}
-	return 0, fmt.Errorf("no free ports found in range %d-%d", startPort, startPort+99)
-}
-
-func resolvePort(preferredPort int) (int, error) {
-	if port, err := resolvePortIfFree(preferredPort); err == nil {
-		return port, nil
-	}
-	return findFreePort(preferredPort + 1)
-}
-
-func resolvePortIfFree(port int) (int, error) {
-	addr := fmt.Sprintf(":%d", port)
-	listener, err := net.Listen("tcp", addr)
-	if err != nil {
-		return 0, err
-	}
-	listener.Close()
-	return port, nil
-}
 
 func buildServer(
 	cfg *config.Config,
@@ -88,7 +57,6 @@ func buildServer(
 func main() {
 	// Load configuration
 	cfg := config.Load()
-	requestedPort := cfg.Server.Port
 	repo := infrastructure.NewDashboardRepository(cfg.Data.DashboardFile)
 	service := domain.NewDashboardService(repo)
 	if err := os.MkdirAll(cfg.Stacks.Dir, 0o755); err != nil {
@@ -124,7 +92,7 @@ func main() {
 	if platformSettings, err := platformSettingsService.GetPlatformSettings(context.Background()); err != nil {
 		log.Printf("⚠️  Failed to load platform settings: %v", err)
 	} else {
-		log.Printf("🧭 Platform settings loaded: host=%q port=%d domain=%q tls=%v", platformSettings.AdminHost, platformSettings.AdminPort, platformSettings.AdminDomain, platformSettings.AdminUseTLS)
+		log.Printf("🧭 Platform settings loaded: certbot_enabled=%v staging=%v auto_renew=%v", platformSettings.CertbotEnabled, platformSettings.CertbotStaging, platformSettings.CertbotAutoRenew)
 	}
 
 	appService := appusecase.NewAppService(appRepo, dockerRepository, gitRepository, cfg.Stacks.Dir).
@@ -136,15 +104,6 @@ func main() {
 			hosting.NewCertbotManager(),
 		)
 	auth := middleware.NewSessionAuth(cfg.Auth.AdminUser, cfg.Auth.AdminPass)
-	freePort, err := resolvePort(cfg.Server.Port)
-	if err != nil {
-		log.Fatalf("❌ No free ports available in range %d-%d", cfg.Server.Port, cfg.Server.Port+99)
-	}
-	cfg.Server.Port = freePort
-
-	if requestedPort != freePort {
-		log.Printf("⚠️  Port %d was unavailable, using fallback port %d", requestedPort, freePort)
-	}
 
 	var renderer *views.Renderer
 	if cfg.Mode != "api" {
