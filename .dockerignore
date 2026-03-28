@@ -1,0 +1,11 @@
+.git
+.gitignore
+.cursor
+.paas
+agent-transcripts
+node_modules
+website
+*.exe
+*.log
+tmp
+coverage*

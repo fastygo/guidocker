@@ -4,11 +4,11 @@ ARG GO_VERSION=1.22.2
 
 FROM golang:${GO_VERSION}-bookworm AS builder
 
-WORKDIR /src
+WORKDIR /src/dashboard
 
-COPY go.mod ./
-COPY localdeps ./localdeps
-COPY . .
+COPY dashboard/go.mod ./
+COPY dashboard/localdeps ./localdeps
+COPY dashboard/. .
 
 RUN CGO_ENABLED=0 go test ./...
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/dashboard .
@@ -45,9 +45,9 @@ RUN if getent group docker >/dev/null 2>&1; then \
 WORKDIR /app
 
 COPY --from=builder /out/dashboard /usr/local/bin/dashboard
-COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-COPY data ./data
-COPY --from=builder /src/static ./static
+COPY dashboard/scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY dashboard/data ./data
+COPY --from=builder /src/dashboard/static ./static
 
 ENV SERVER_HOST=0.0.0.0 \
     PAAS_PORT=7000 \

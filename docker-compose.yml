@@ -1,0 +1,36 @@
+services:
+  dashboard:
+    image: ${APP_IMAGE:-paas-dashboard:main}
+    restart: unless-stopped
+    pid: host
+    userns_mode: host
+    security_opt:
+      - apparmor=unconfined
+    group_add:
+      - "${DOCKER_GID:-999}"
+    ports:
+      - "127.0.0.1:7000:7000"
+    expose:
+      - "7000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /:/host
+      - /opt/stacks:/opt/stacks
+      - /etc/nginx:/etc/nginx
+      - /etc/letsencrypt:/etc/letsencrypt
+      - /var/lib/letsencrypt:/var/lib/letsencrypt
+      - /var/log/letsencrypt:/var/log/letsencrypt
+    environment:
+      SERVER_HOST: 0.0.0.0
+      PAAS_PORT: "7000"
+      PAAS_ADMIN_USER: ${PAAS_ADMIN_USER:-admin}
+      PAAS_ADMIN_PASS: ${PAAS_ADMIN_PASS:-admin@123}
+      DASHBOARD_AUTH_DISABLED: ${DASHBOARD_AUTH_DISABLED:-false}
+      STACKS_DIR: /opt/stacks
+      BOLT_DB_FILE: /opt/stacks/.paas.db
+      PAAS_APP_NETWORK: ${PAAS_APP_NETWORK:-paas-network}
+      PAAS_HOST_ROOT: /host
+      PAAS_NGINX_BINARY: /usr/sbin/nginx
+      PAAS_NGINX_SITES_DIR: /etc/nginx/conf.d
+      PAAS_CERTBOT_BINARY: /usr/bin/certbot
+      DASHBOARD_MODE: api
