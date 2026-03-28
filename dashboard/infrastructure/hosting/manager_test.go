@@ -2,8 +2,8 @@ package hosting
 
 import (
 	"context"
-	"errors"
 	"dashboard/domain"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,11 +21,11 @@ func TestNginxHostManager_ApplyRemoveAndLifecycle(t *testing.T) {
 	}
 
 	app := &domain.App{
-		ID:             "app-1",
-		PublicDomain:   "app.example.com",
-		ProxyTargetPort: 8080,
+		ID:               "app-1",
+		PublicDomain:     "app.example.com",
+		ProxyTargetPort:  8080,
 		ProxyContainerIP: "10.88.0.25",
-		UseTLS:         false,
+		UseTLS:           false,
 	}
 	if err := manager.ApplyRouting(ctx, app, domain.PlatformSettings{}); err != nil {
 		t.Fatalf("ApplyRouting() error = %v", err)
@@ -230,6 +230,45 @@ func TestCertbotManager_EnsureCertificate(t *testing.T) {
 	}
 }
 
+func TestCertbotManager_EnsureCertificate_SkipsWhenCertificateAlreadyExists(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	certDir := t.TempDir()
+	originalCertBasePath := certBasePath
+	certBasePath = certDir
+	defer func() {
+		certBasePath = originalCertBasePath
+	}()
+
+	domainName := "app.example.com"
+	certDomainPath := filepath.Join(certDir, domainName)
+	if err := os.MkdirAll(certDomainPath, 0o755); err != nil {
+		t.Fatalf("failed to create cert dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(certDomainPath, "fullchain.pem"), []byte("certificate"), 0o644); err != nil {
+		t.Fatalf("failed to write fullchain: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(certDomainPath, "privkey.pem"), []byte("private key"), 0o644); err != nil {
+		t.Fatalf("failed to write privkey: %v", err)
+	}
+
+	manager := NewCertbotManagerWithBinary("certbot")
+	manager.runScript = func(_ context.Context, name string, args ...string) ([]byte, error) {
+		t.Fatalf("expected certbot not to run, got %s %v", name, args)
+		return nil, nil
+	}
+
+	err := manager.EnsureCertificate(ctx, domain.PlatformSettings{
+		CertbotEnabled:       true,
+		CertbotEmail:         "ops@example.com",
+		CertbotTermsAccepted: true,
+	}, domainName)
+	if err != nil {
+		t.Fatalf("EnsureCertificate() error = %v", err)
+	}
+}
+
 func TestCertbotManager_RemoveCertificate(t *testing.T) {
 	t.Parallel()
 
@@ -287,9 +326,9 @@ func TestCertbotManager_EnsureCertificate_RequiresTerms(t *testing.T) {
 	ctx := context.Background()
 	manager := NewCertbotManagerWithBinary("certbot")
 	err := manager.EnsureCertificate(ctx, domain.PlatformSettings{
-		CertbotEnabled:  true,
-		CertbotEmail:    "ops@example.com",
-		CertbotStaging:  true,
+		CertbotEnabled: true,
+		CertbotEmail:   "ops@example.com",
+		CertbotStaging: true,
 	}, "app.example.com")
 	if err == nil {
 		t.Fatal("expected terms accepted error")

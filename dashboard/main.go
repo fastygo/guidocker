@@ -12,8 +12,8 @@ import (
 	"dashboard/interfaces"
 	"dashboard/interfaces/middleware"
 	appusecase "dashboard/usecase/app"
-	settingsusecase "dashboard/usecase/settings"
 	scanusecase "dashboard/usecase/scanner"
+	settingsusecase "dashboard/usecase/settings"
 	"dashboard/views"
 	"fmt"
 	"log"
@@ -69,9 +69,13 @@ func buildServer(
 	handler.SetScanUseCase(scanUseCase)
 	handler.SetPlatformSettingsUseCase(platformSettingsUseCase)
 	handler.SetCertificateOperations(hosting.NewCertbotManager(), hosting.NewNginxHostManager())
-	handler.SetLoginHandler(auth.LoginHandler())
-
-	interfaces.RegisterRoutes(mux, handler)
+	auth.SetAPIOnly(cfg.Mode == "api")
+	if cfg.Mode == "api" {
+		interfaces.RegisterAPIRoutes(mux, handler)
+	} else {
+		handler.SetLoginHandler(auth.LoginHandler())
+		interfaces.RegisterRoutes(mux, handler)
+	}
 
 	next := http.Handler(mux)
 	if !cfg.Auth.Disabled {
@@ -142,9 +146,12 @@ func main() {
 		log.Printf("⚠️  Port %d was unavailable, using fallback port %d", requestedPort, freePort)
 	}
 
-	renderer, err := views.NewRenderer()
-	if err != nil {
-		log.Fatalf("❌ Failed to initialize view renderer: %v", err)
+	var renderer *views.Renderer
+	if cfg.Mode != "api" {
+		renderer, err = views.NewRenderer()
+		if err != nil {
+			log.Fatalf("❌ Failed to initialize view renderer: %v", err)
+		}
 	}
 
 	scanService := scanusecase.NewScannerService(dockerRepository, appRepo, cfg.Stacks.Dir)
@@ -152,11 +159,16 @@ func main() {
 
 	// Start server in goroutine
 	go func() {
-		log.Printf("🚀 Starting Dashboard Server...")
-		log.Printf("📡 Server URL: http://%s", cfg.GetServerAddress())
+		if cfg.Mode == "api" {
+			log.Printf("🚀 Starting Dashboard Server (API-only mode)...")
+			log.Printf("📡 API URL: http://%s/api/", cfg.GetServerAddress())
+		} else {
+			log.Printf("🚀 Starting Dashboard Server (GUI mode)...")
+			log.Printf("📡 Server URL: http://%s", cfg.GetServerAddress())
+			log.Printf("🔐 Login page: http://%s/login", cfg.GetServerAddress())
+		}
 		log.Printf("📊 Data source: %s", cfg.Data.DashboardFile)
 		log.Printf("🗂️  Stacks directory: %s", cfg.Stacks.Dir)
-		log.Printf("🔐 Login page: http://%s/login", cfg.GetServerAddress())
 
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("❌ Server failed to start: %v", err)

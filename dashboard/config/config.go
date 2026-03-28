@@ -1,6 +1,7 @@
 package config
 
 import (
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -14,6 +15,7 @@ type Config struct {
 	Auth   AuthConfig
 	Stacks StacksConfig
 	Import RepoImportConfig
+	Mode   string
 }
 
 // ServerConfig holds server-related configuration
@@ -66,10 +68,11 @@ func Load() *Config {
 			Dir:    stacksDir,
 			DBFile: getEnv("BOLT_DB_FILE", filepath.Join(stacksDir, ".paas.db")),
 		},
-	Import: RepoImportConfig{
-		Timeout:  getEnvAsDuration("REPO_IMPORT_TIMEOUT_SECONDS", 300*time.Second),
-		TempPath: getEnv("REPO_IMPORT_TEMP_PATH", ".tmp"),
-	},
+		Import: RepoImportConfig{
+			Timeout:  getEnvAsDuration("REPO_IMPORT_TIMEOUT_SECONDS", 300*time.Second),
+			TempPath: getEnv("REPO_IMPORT_TEMP_PATH", ".tmp"),
+		},
+		Mode: getEnvWithValidation("DASHBOARD_MODE", "gui", []string{"gui", "api"}),
 	}
 }
 
@@ -133,4 +136,15 @@ func getEnvAsDuration(key string, fallback time.Duration) time.Duration {
 	}
 
 	return time.Duration(seconds) * time.Second
+}
+
+func getEnvWithValidation(key, fallback string, valid []string) string {
+	value := getEnv(key, fallback)
+	for _, candidate := range valid {
+		if value == candidate {
+			return value
+		}
+	}
+	log.Fatalf("invalid %s=%q, must be one of: %v", key, value, valid)
+	return fallback
 }

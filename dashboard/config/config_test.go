@@ -16,6 +16,7 @@ func TestLoad_Defaults(t *testing.T) {
 	t.Setenv("PAAS_AUTH_DISABLED", "")
 	t.Setenv("STACKS_DIR", "")
 	t.Setenv("BOLT_DB_FILE", "")
+	t.Setenv("DASHBOARD_MODE", "")
 
 	cfg := Load()
 	if cfg.Server.Host != "localhost" {
@@ -42,6 +43,9 @@ func TestLoad_Defaults(t *testing.T) {
 	if filepath.ToSlash(cfg.Stacks.DBFile) != "/opt/stacks/.paas.db" {
 		t.Fatalf("expected default BoltDB file /opt/stacks/.paas.db, got %q", cfg.Stacks.DBFile)
 	}
+	if cfg.Mode != "gui" {
+		t.Fatalf("expected default mode gui, got %q", cfg.Mode)
+	}
 }
 
 func TestLoad_EnvOverrides(t *testing.T) {
@@ -53,6 +57,7 @@ func TestLoad_EnvOverrides(t *testing.T) {
 	t.Setenv("DASHBOARD_AUTH_DISABLED", "true")
 	t.Setenv("STACKS_DIR", "/srv/stacks")
 	t.Setenv("BOLT_DB_FILE", "/srv/stacks/apps.db")
+	t.Setenv("DASHBOARD_MODE", "api")
 
 	cfg := Load()
 	if cfg.Server.Host != "0.0.0.0" {
@@ -72,6 +77,9 @@ func TestLoad_EnvOverrides(t *testing.T) {
 	}
 	if cfg.Stacks.Dir != "/srv/stacks" || cfg.Stacks.DBFile != "/srv/stacks/apps.db" {
 		t.Fatalf("expected stack overrides to be applied, got %+v", cfg.Stacks)
+	}
+	if cfg.Mode != "api" {
+		t.Fatalf("expected mode api, got %q", cfg.Mode)
 	}
 }
 

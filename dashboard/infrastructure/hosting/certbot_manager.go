@@ -56,6 +56,10 @@ func (m *CertbotManager) EnsureCertificate(ctx context.Context, settings domain.
 	if !settings.CertbotTermsAccepted {
 		return fmt.Errorf("certbot terms of service must be accepted")
 	}
+	certInfo := certificateFiles(domainValue)
+	if certInfoExists(certInfo.fullChain, certInfo.privateKey) {
+		return nil
+	}
 
 	args := []string{"certonly", "--nginx", "--non-interactive", "--agree-tos", "--email", email, "-d", domainValue}
 	if settings.CertbotStaging {

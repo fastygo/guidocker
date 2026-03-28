@@ -9,19 +9,20 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 )
 
 // DashboardHandler handles HTTP requests for dashboard
 type DashboardHandler struct {
-	dashboardUseCase domain.DashboardUseCase
-	appUseCase       domain.AppUseCase
-	scanUseCase      domain.ScannerUseCase
+	dashboardUseCase        domain.DashboardUseCase
+	appUseCase              domain.AppUseCase
+	scanUseCase             domain.ScannerUseCase
 	platformSettingsUseCase domain.PlatformSettingsUseCase
-	certbotManager   certbotManager
-	hostManager      certReloadManager
-	loginHandler     http.HandlerFunc
-	renderer         *views.Renderer
+	certbotManager          certbotManager
+	hostManager             certReloadManager
+	loginHandler            http.HandlerFunc
+	renderer                *views.Renderer
 }
 
 type certbotManager interface {
@@ -47,8 +48,7 @@ func (h *DashboardHandler) SetRenderer(r *views.Renderer) {
 
 func (h *DashboardHandler) executeView(w http.ResponseWriter, name string, data interface{}) {
 	if h.renderer == nil {
-		log.Printf("Renderer not initialized")
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		http.Error(w, "GUI is disabled in API-only mode", http.StatusNotFound)
 		return
 	}
 	html, err := h.renderer.Execute(name, data)
@@ -528,6 +528,18 @@ func (h *DashboardHandler) APIGetDashboard(w http.ResponseWriter, r *http.Reques
 	h.writeJSON(w, http.StatusOK, dashboardData)
 }
 
+func (h *DashboardHandler) APIHealth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		h.writeMethodNotAllowed(w)
+		return
+	}
+
+	h.writeJSON(w, http.StatusOK, map[string]string{
+		"status": "ok",
+		"mode":   healthMode(),
+	})
+}
+
 type updateContainerRequest struct {
 	Status string `json:"status"`
 }
@@ -616,4 +628,12 @@ func (h *DashboardHandler) writeErrorResponse(w http.ResponseWriter, statusCode 
 
 func (h *DashboardHandler) writeMethodNotAllowed(w http.ResponseWriter) {
 	h.writeErrorResponse(w, http.StatusMethodNotAllowed, "Method Not Allowed")
+}
+
+func healthMode() string {
+	mode := strings.TrimSpace(os.Getenv("DASHBOARD_MODE"))
+	if mode == "" {
+		return "gui"
+	}
+	return mode
 }

@@ -21,6 +21,7 @@ type SessionAuth struct {
 	user     string
 	pass     string
 	now      func() time.Time
+	apiOnly  bool
 	mu       sync.RWMutex
 	sessions map[string]time.Time
 }
@@ -38,6 +39,13 @@ func NewSessionAuth(user, pass string) *SessionAuth {
 // BasicAuth returns an auth middleware with an isolated in-memory session store.
 func BasicAuth(user, pass string) func(http.Handler) http.Handler {
 	return NewSessionAuth(user, pass).Middleware()
+}
+
+func (a *SessionAuth) SetAPIOnly(v bool) {
+	if a == nil {
+		return
+	}
+	a.apiOnly = v
 }
 
 // Middleware protects all routes except /login.
@@ -63,6 +71,10 @@ func (a *SessionAuth) Middleware() func(http.Handler) http.Handler {
 			if strings.HasPrefix(r.URL.Path, "/api/") {
 				w.Header().Set("WWW-Authenticate", `Basic realm="PaaS"`)
 				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+			if a.apiOnly {
+				next.ServeHTTP(w, r)
 				return
 			}
 
