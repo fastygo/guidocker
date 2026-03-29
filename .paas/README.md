@@ -5,6 +5,15 @@ This `.paas` folder manages two related workflows:
 - the dashboard itself as an internal-only controller
 - regular applications deployed through that dashboard API
 
+Related operator documentation:
+
+- `docs/architecture/overview.md`
+- `docs/deployment/dashboard-runtime.md`
+- `docs/operations/settings-and-persistence.md`
+- `docs/runbooks/dashboard-operations.md`
+- `docs/runbooks/managed-app-operations.md`
+- `docs/faq/operator-faq.md`
+
 Target runtime model:
 
 - dashboard API and optional GUI are available only on the server at `http://127.0.0.1:7000`
@@ -203,6 +212,10 @@ What it does:
 5. waits until `INPUT_DASHBOARD_URL/api/health` responds
 6. optionally seeds platform TLS settings through `PUT /api/settings` if `INPUT_CERTBOT_EMAIL` is not empty
 
+Operational note:
+
+- this flow can initialize platform settings in the runtime database.
+
 After bootstrap, verify on the server:
 
 ```bash
@@ -217,7 +230,7 @@ docker ps --format '{{.Names}}'
 
 Use this flow for routine updates without a registry hop.
 
-```bash
+```bash 
 ./paas.exe validate deploy-direct
 bash ./.paas/run.sh deploy-direct --dry-run
 bash ./.paas/run.sh deploy-direct
@@ -230,6 +243,11 @@ What it does:
 3. re-renders `/opt/<INPUT_APP_NAME>/docker-compose.yml`
 4. runs `docker compose up -d --remove-orphans`
 5. verifies the internal API on `INPUT_DASHBOARD_URL`
+
+Operational note:
+
+- this flow updates the dashboard runtime but does not write platform settings through `/api/settings`.
+- use it for routine upgrades when GUI or API-managed platform settings should remain untouched.
 
 ## `deploy`
 
@@ -413,6 +431,17 @@ INPUT_CERTBOT_AUTO_RENEW: "true"
 ```
 
 These values are written through `/api/settings` and are later used only when managed apps enable proxy TLS.
+
+Important distinction:
+
+- `.paas/config.yml` is a deployment input source,
+- `/settings` reads persisted runtime state from the dashboard database.
+
+Recommended model:
+
+1. use `bootstrap-direct` to seed initial platform settings,
+2. use `deploy-direct` for routine dashboard upgrades,
+3. manage later settings changes through the GUI or API without overwriting them on every deploy.
 
 ## Verification commands
 

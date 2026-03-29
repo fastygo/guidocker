@@ -5,10 +5,12 @@ This directory contains the Go control plane used to manage Docker applications,
 ## Runtime model
 
 - internal-only host endpoint: `http://127.0.0.1:7000`
-- default hardened mode: `DASHBOARD_MODE=api`
+- local binary default: `DASHBOARD_MODE=gui`
+- Docker runtime default: `DASHBOARD_MODE=api`
 - optional GUI mode for operator sessions through SSH tunneling
 - persistent state lives outside the container in `/opt/stacks`
 - host `nginx` and `certbot` continue serving managed apps even if the dashboard is reinstalled
+- GUI pages are server-rendered and major operator actions use HTML `POST` forms with redirects
 
 ## Build and run locally
 
@@ -29,6 +31,7 @@ Open:
 
 - UI: `http://localhost:7000`
 - Login: `http://localhost:7000/login`
+- API: `http://localhost:7000/api/health`
 
 ## Development helpers
 
@@ -57,6 +60,7 @@ Quick checks:
 
 - `http://localhost:7000/apps`
 - `http://localhost:7000/apps/new`
+- `http://localhost:7000/settings`
 - `curl -u admin:admin@123 http://localhost:7000/api/apps`
 
 ## Docker runtime
@@ -98,23 +102,32 @@ Current writable paths:
 | `PAAS_NGINX_BINARY` | `/usr/sbin/nginx` | Host nginx binary path |
 | `PAAS_NGINX_SITES_DIR` | `/etc/nginx/conf.d` | Host nginx config directory for managed routes |
 | `PAAS_CERTBOT_BINARY` | `/usr/bin/certbot` | Host certbot binary path |
-| `DASHBOARD_MODE` | `gui` | `gui` for operator sessions, `api` for hardened runtime |
+| `DASHBOARD_MODE` | `gui` | Local default mode. The shipped Docker runtime compose currently sets `DASHBOARD_MODE=api`. |
 
 ## Routes
 
 ### Web UI
 
-| Path | Description |
-| --- | --- |
-| `GET /` | Overview |
-| `GET /login` | Login screen |
-| `GET /apps` | App list |
-| `GET /apps/new` | Create app |
-| `GET /apps/{id}` | App detail |
-| `GET /apps/{id}/compose` | Compose editor |
-| `GET /apps/{id}/logs` | Logs viewer |
-| `GET /scan` | Scanner UI |
-| `GET /settings` | Platform TLS settings |
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | `/` | Overview |
+| GET | `/login` | Login screen |
+| GET | `/apps` | App list |
+| GET | `/apps/new` | Create app |
+| GET | `/apps/{id}` | App detail |
+| POST | `/apps/{id}/config` | Save app routing and managed env settings |
+| POST | `/apps/{id}/deploy` | Deploy app |
+| POST | `/apps/{id}/restart` | Restart app |
+| POST | `/apps/{id}/stop` | Stop app |
+| GET | `/apps/{id}/delete` | Delete confirmation page |
+| POST | `/apps/{id}/delete` | Delete app |
+| GET | `/apps/{id}/compose` | Compose editor |
+| POST | `/apps/{id}/compose` | Save or deploy compose changes |
+| GET | `/apps/{id}/logs` | Logs viewer |
+| GET | `/scan` | Scanner UI |
+| GET | `/settings` | Platform TLS settings page |
+| POST | `/settings` | Save platform TLS settings |
+| POST | `/settings/renew` | Run certificate renewal now |
 
 ### API
 
@@ -152,9 +165,18 @@ http://127.0.0.1:7500
 
 If the runtime stays in `DASHBOARD_MODE=api`, the tunnel still works but only `/api/*` routes are available.
 
+To expose the GUI temporarily for an operator session, switch the rendered runtime compose to `DASHBOARD_MODE=gui` and restart the container.
+
 ## Platform TLS settings
 
 The settings page now manages only TLS automation for managed application domains.
+
+Important distinction:
+
+- deployment-time values from `.paas/config.yml` do not automatically populate the GUI,
+- `/settings` reads persisted platform settings from BoltDB,
+- `bootstrap-direct` can seed those settings through `PUT /api/settings`,
+- `deploy-direct` updates the dashboard runtime without overwriting existing platform settings.
 
 Workflow:
 
@@ -176,3 +198,11 @@ curl -I https://<domain>/
 ```bash
 go test ./...
 ```
+
+## Related docs
+
+- `../docs/architecture/overview.md`
+- `../docs/deployment/dashboard-runtime.md`
+- `../docs/operations/settings-and-persistence.md`
+- `../docs/runbooks/dashboard-operations.md`
+- `../docs/runbooks/incident-response.md`
