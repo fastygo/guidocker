@@ -9,7 +9,10 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
+	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -118,19 +121,25 @@ func containerComposeYAML(c *domain.Container) string {
     restart: unless-stopped`
 }
 
-func appDetailPaasToView(app *domain.App) views.AppDetailPaasView {
+func appDetailPaasToView(app *domain.App, flashMsg, flashErr string) views.AppDetailPaasView {
 	return views.AppDetailPaasView{
 		LayoutData: views.LayoutData{
 			Title:    "PaaS Dashboard",
 			Subtitle: "Application details",
 			Active:   "/apps",
 		},
-		ID:        app.ID,
-		Name:      app.Name,
-		Dir:       app.Dir,
-		PortsStr:  strings.Join(app.Ports, ", "),
-		Status:    domain.NormalizeAppStatus(app.Status),
-		UpdatedAt: views.FormatTime(app.UpdatedAt),
+		ID:              app.ID,
+		Name:            app.Name,
+		Dir:             app.Dir,
+		PortsStr:        strings.Join(app.Ports, ", "),
+		Status:          domain.NormalizeAppStatus(app.Status),
+		UpdatedAt:       views.FormatTime(app.UpdatedAt),
+		PublicDomain:    app.PublicDomain,
+		ProxyTargetPort: app.ProxyTargetPort,
+		UseTLS:          app.UseTLS,
+		ManagedEnvStr:   renderManagedEnv(app.ManagedEnv),
+		FlashMessage:    flashMsg,
+		FlashError:      flashErr,
 	}
 }
 
@@ -146,6 +155,8 @@ func composePaasToView(app *domain.App) views.ComposeView {
 	repoBranch := ""
 	composePath := ""
 	appPort := 0
+	repoAutoDeploy := true
+	repoMode := false
 
 	if app != nil {
 		title = "Edit application"
@@ -159,6 +170,7 @@ func composePaasToView(app *domain.App) views.ComposeView {
 		repoBranch = app.RepoBranch
 		composePath = app.ComposePath
 		appPort = app.AppPort
+		repoMode = app.SourceType == domain.SourceTypeRepoCompose || app.SourceType == domain.SourceTypeRepoDockerfile
 	}
 
 	appIDJS := template.JS("null")
@@ -182,13 +194,16 @@ func composePaasToView(app *domain.App) views.ComposeView {
 		RepoBranch:  repoBranch,
 		ComposePath: composePath,
 		AppPort:     appPort,
+		RepoAutoDeploy: repoAutoDeploy,
+		RepoMode:       repoMode,
+		IsExistingApp:  app != nil,
 		ActionLabel: actionLabel,
 		AppID:       appID,
 		AppIDJS:     appIDJS,
 	}
 }
 
-func logsPaasToView(app *domain.App) views.LogsView {
+func logsPaasToView(app *domain.App, logsContent, status string) views.LogsView {
 	return views.LogsView{
 		LayoutData: views.LayoutData{
 			Title:    "PaaS Dashboard",
@@ -197,7 +212,8 @@ func logsPaasToView(app *domain.App) views.LogsView {
 		},
 		ID:          app.ID,
 		Name:        app.Name,
-		LogsContent: "Loading logs...",
+		LogsContent: logsContent,
+		Status:      status,
 	}
 }
 
@@ -236,7 +252,18 @@ func (h *DashboardHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 		h.handleApps(w, r)
 		return
 	case "/settings", "/settings/":
+		if r.Method == http.MethodPost {
+			h.handleSettingsPost(w, r)
+			return
+		}
 		h.handleSettings(w, r)
+		return
+	case "/settings/renew":
+		if r.Method == http.MethodPost {
+			h.handleCertbotRenewPost(w, r)
+			return
+		}
+		h.writeMethodNotAllowed(w)
 		return
 	default:
 		if strings.HasPrefix(r.URL.Path, "/apps/") {
@@ -270,6 +297,8 @@ func (h *DashboardHandler) handleOverview(w http.ResponseWriter, r *http.Request
 }
 
 func (h *DashboardHandler) handleApps(w http.ResponseWriter, r *http.Request) {
+	flashMsg := r.URL.Query().Get("msg")
+	flashErr := r.URL.Query().Get("err")
 	if h.appUseCase != nil {
 		apps, err := h.appUseCase.ListApps(r.Context())
 		if err != nil {
@@ -279,6 +308,8 @@ func (h *DashboardHandler) handleApps(w http.ResponseWriter, r *http.Request) {
 		}
 
 		view := appsToView(apps)
+		view.FlashMessage = flashMsg
+		view.FlashError = flashErr
 		h.executeView(w, "apps", view)
 		return
 	}
@@ -296,7 +327,9 @@ func (h *DashboardHandler) handleApps(w http.ResponseWriter, r *http.Request) {
 			Subtitle: "Managed containers",
 			Active:   "/apps",
 		},
-		Items: containersToAppItems(dashboardData.Containers),
+		Items:        containersToAppItems(dashboardData.Containers),
+		FlashMessage: flashMsg,
+		FlashError:   flashErr,
 	}
 	h.executeView(w, "apps", view)
 }
@@ -328,15 +361,67 @@ func (h *DashboardHandler) handleAppRoutes(w http.ResponseWriter, r *http.Reques
 	id := parts[0]
 	action := parts[1]
 	if id == "new" && (action == "compose" || action == "deploy" || action == "edit") {
+		if r.Method == http.MethodPost && action == "compose" {
+			h.handleComposePost(w, r, "")
+			return
+		}
 		h.handleComposeCreate(w, r)
 		return
 	}
 
 	switch action {
-	case "compose", "edit", "deploy":
+	case "compose", "edit":
+		if r.Method == http.MethodPost {
+			h.handleComposePost(w, r, id)
+			return
+		}
+		h.handleComposeEdit(w, r, id)
+	case "deploy":
+		if r.Method == http.MethodPost {
+			h.handleAppLifecyclePost(w, r, id, "Application deployed", h.appUseCase.DeployApp)
+			return
+		}
 		h.handleComposeEdit(w, r, id)
 	case "logs":
 		h.handleAppLogs(w, r, id)
+	case "restart":
+		if r.Method == http.MethodPost {
+			if h.appUseCase != nil {
+				h.handleAppLifecyclePost(w, r, id, "Application restarted", h.appUseCase.RestartApp)
+			} else {
+				h.handleContainerLifecyclePost(w, r, id, "restart")
+			}
+			return
+		}
+		http.NotFound(w, r)
+	case "stop":
+		if r.Method == http.MethodPost {
+			if h.appUseCase != nil {
+				h.handleAppLifecyclePost(w, r, id, "Application stopped", h.appUseCase.StopApp)
+			} else {
+				h.handleContainerLifecyclePost(w, r, id, "stop")
+			}
+			return
+		}
+		http.NotFound(w, r)
+	case "start", "pause", "unpause":
+		if r.Method == http.MethodPost && h.appUseCase == nil {
+			h.handleContainerLifecyclePost(w, r, id, action)
+			return
+		}
+		http.NotFound(w, r)
+	case "delete":
+		if r.Method == http.MethodPost {
+			h.handleAppDeletePost(w, r, id)
+			return
+		}
+		h.handleAppDeleteConfirm(w, r, id)
+	case "config":
+		if r.Method == http.MethodPost {
+			h.handleAppConfigPost(w, r, id)
+			return
+		}
+		http.NotFound(w, r)
 	default:
 		http.NotFound(w, r)
 	}
@@ -356,7 +441,7 @@ func (h *DashboardHandler) handleAppDetail(w http.ResponseWriter, r *http.Reques
 			return
 		}
 
-		view := appDetailPaasToView(app)
+		view := appDetailPaasToView(app, r.URL.Query().Get("msg"), r.URL.Query().Get("err"))
 		h.executeView(w, "app_detail_paas", view)
 		return
 	}
@@ -385,9 +470,213 @@ func (h *DashboardHandler) handleAppDetail(w http.ResponseWriter, r *http.Reques
 	h.executeView(w, "app_detail", view)
 }
 
+func (h *DashboardHandler) handleAppConfigPost(w http.ResponseWriter, r *http.Request, id string) {
+	if h.appUseCase == nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		redirectWithFlash(w, r, "/apps/"+url.PathEscape(id), "", "Invalid form submission")
+		return
+	}
+
+	config := domain.AppConfig{
+		PublicDomain:    r.FormValue("public_domain"),
+		ProxyTargetPort: parseIntOr(r.FormValue("proxy_target_port"), 0),
+		UseTLS:          r.FormValue("use_tls") == "on",
+		ManagedEnv:      parseManagedEnvString(r.FormValue("managed_env")),
+	}
+	if _, err := h.appUseCase.UpdateAppConfig(r.Context(), id, config); err != nil {
+		redirectWithFlash(w, r, "/apps/"+url.PathEscape(id), "", err.Error())
+		return
+	}
+
+	redirectWithFlash(w, r, "/apps/"+url.PathEscape(id), "App settings saved", "")
+}
+
+func (h *DashboardHandler) handleAppLifecyclePost(w http.ResponseWriter, r *http.Request, id, successMessage string, fn func(context.Context, string) error) {
+	if h.appUseCase == nil || fn == nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := fn(r.Context(), id); err != nil {
+		redirectWithFlash(w, r, "/apps/"+url.PathEscape(id), "", err.Error())
+		return
+	}
+	redirectWithFlash(w, r, "/apps/"+url.PathEscape(id), successMessage, "")
+}
+
+func (h *DashboardHandler) handleAppDeletePost(w http.ResponseWriter, r *http.Request, id string) {
+	if h.appUseCase == nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := h.appUseCase.DeleteApp(r.Context(), id); err != nil {
+		redirectWithFlash(w, r, "/apps/"+url.PathEscape(id), "", err.Error())
+		return
+	}
+	redirectWithFlash(w, r, "/apps", "Application deleted", "")
+}
+
+func (h *DashboardHandler) handleContainerLifecyclePost(w http.ResponseWriter, r *http.Request, id, status string) {
+	if h.dashboardUseCase == nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := h.dashboardUseCase.UpdateContainerStatus(r.Context(), id, status); err != nil {
+		redirectBackOrDefault(w, r, "/apps/"+url.PathEscape(id))
+		return
+	}
+	redirectBackOrDefault(w, r, "/apps/"+url.PathEscape(id))
+}
+
+func (h *DashboardHandler) handleAppDeleteConfirm(w http.ResponseWriter, r *http.Request, id string) {
+	if h.appUseCase == nil {
+		http.NotFound(w, r)
+		return
+	}
+	app, err := h.appUseCase.GetApp(r.Context(), id)
+	if err != nil {
+		log.Printf("Failed to load app %s for delete confirmation: %v", id, err)
+		http.NotFound(w, r)
+		return
+	}
+
+	view := views.DeleteConfirmView{
+		LayoutData: views.LayoutData{
+			Title:    "PaaS Dashboard",
+			Subtitle: "Delete confirmation",
+			Active:   "/apps",
+		},
+		ID:   app.ID,
+		Name: app.Name,
+	}
+	h.executeView(w, "app_delete_confirm", view)
+}
+
+func (h *DashboardHandler) handleComposePost(w http.ResponseWriter, r *http.Request, id string) {
+	if h.appUseCase == nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form submission", http.StatusBadRequest)
+		return
+	}
+
+	mode := strings.TrimSpace(r.FormValue("mode"))
+	if mode == "" {
+		mode = "compose"
+	}
+	shouldDeploy := r.FormValue("submit_action") == "deploy"
+	if mode == "repo" {
+		h.handleComposeRepoPost(w, r, id, shouldDeploy)
+		return
+	}
+	h.handleComposeManualPost(w, r, id, shouldDeploy)
+}
+
+func (h *DashboardHandler) handleComposeManualPost(w http.ResponseWriter, r *http.Request, id string, shouldDeploy bool) {
+	name := strings.TrimSpace(r.FormValue("name"))
+	composeYAML := r.FormValue("compose_yaml")
+
+	var (
+		app *domain.App
+		err error
+	)
+	if id == "" {
+		app, err = h.appUseCase.CreateApp(r.Context(), name, composeYAML)
+	} else {
+		app, err = h.appUseCase.UpdateApp(r.Context(), id, name, composeYAML)
+	}
+	if err != nil {
+		var existing *domain.App
+		if id != "" {
+			existing = &domain.App{ID: id}
+		}
+		h.renderComposeError(w, id, buildComposeViewFromRequest(existing, r, err.Error()))
+		return
+	}
+
+	if shouldDeploy {
+		if err := h.appUseCase.DeployApp(r.Context(), app.ID); err != nil {
+			h.renderComposeError(w, app.ID, buildComposeViewFromRequest(app, r, err.Error()))
+			return
+		}
+		redirectWithFlash(w, r, "/apps/"+url.PathEscape(app.ID), "Application deployed", "")
+		return
+	}
+
+	redirectWithFlash(w, r, "/apps/"+url.PathEscape(app.ID)+"/compose", "Compose saved", "")
+}
+
+func (h *DashboardHandler) handleComposeRepoPost(w http.ResponseWriter, r *http.Request, id string, shouldDeploy bool) {
+	if id != "" {
+		h.renderComposeError(w, id, buildComposeViewFromRequest(&domain.App{ID: id}, r, "Import mode updates existing applications are disabled"))
+		return
+	}
+	autoDeploy := shouldDeploy || r.FormValue("repo_auto_deploy") == "on"
+
+	input := domain.ImportRepoInput{
+		Name:        strings.TrimSpace(r.FormValue("name")),
+		RepoURL:     strings.TrimSpace(r.FormValue("repo_url")),
+		Branch:      strings.TrimSpace(r.FormValue("repo_branch")),
+		ComposePath: strings.TrimSpace(r.FormValue("repo_compose_path")),
+		AppPort:     parseIntOr(r.FormValue("repo_app_port"), 0),
+		AutoDeploy:  autoDeploy,
+	}
+	app, err := h.appUseCase.ImportRepo(r.Context(), input)
+	if err != nil {
+		h.renderComposeError(w, "", buildComposeViewFromRequest(nil, r, err.Error()))
+		return
+	}
+
+	if autoDeploy {
+		redirectWithFlash(w, r, "/apps/"+url.PathEscape(app.ID), "Application deployed", "")
+		return
+	}
+	redirectWithFlash(w, r, "/apps", "Application imported", "")
+}
+
+func (h *DashboardHandler) renderComposeError(w http.ResponseWriter, id string, view views.ComposeView) {
+	if id == "" {
+		view.Title = "Create application"
+		view.Subtitle = "New compose deployment"
+	} else if view.Title == "" {
+		view.Title = "Edit application"
+		view.Subtitle = "Update existing compose stack"
+	}
+	h.executeView(w, "compose", view)
+}
+
+func buildComposeViewFromRequest(app *domain.App, r *http.Request, flashErr string) views.ComposeView {
+	view := composePaasToView(app)
+	mode := strings.TrimSpace(r.FormValue("mode"))
+	if mode == "" {
+		mode = "compose"
+	}
+	view.Name = strings.TrimSpace(r.FormValue("name"))
+	view.ComposeYAML = r.FormValue("compose_yaml")
+	view.RepoURL = strings.TrimSpace(r.FormValue("repo_url"))
+	view.RepoBranch = strings.TrimSpace(r.FormValue("repo_branch"))
+	view.ComposePath = strings.TrimSpace(r.FormValue("repo_compose_path"))
+	view.AppPort = parseIntOr(r.FormValue("repo_app_port"), 0)
+	view.RepoAutoDeploy = r.FormValue("repo_auto_deploy") == "on"
+	view.RepoMode = mode == "repo"
+	view.FlashError = flashErr
+	view.FlashMessage = ""
+	if app == nil {
+		view.IsExistingApp = false
+		view.AppID = ""
+	}
+	return view
+}
+
 func (h *DashboardHandler) handleComposeCreate(w http.ResponseWriter, r *http.Request) {
 	if h.appUseCase != nil {
 		view := composePaasToView(nil)
+		view.FlashMessage = r.URL.Query().Get("msg")
+		view.FlashError = r.URL.Query().Get("err")
 		h.executeView(w, "compose", view)
 		return
 	}
@@ -422,6 +711,8 @@ func (h *DashboardHandler) handleComposeEdit(w http.ResponseWriter, r *http.Requ
 		}
 
 		view := composePaasToView(app)
+		view.FlashMessage = r.URL.Query().Get("msg")
+		view.FlashError = r.URL.Query().Get("err")
 		h.executeView(w, "compose", view)
 		return
 	}
@@ -462,7 +753,18 @@ func (h *DashboardHandler) handleAppLogs(w http.ResponseWriter, r *http.Request,
 			return
 		}
 
-		view := logsPaasToView(app)
+		logsText, err := h.appUseCase.GetAppLogs(r.Context(), app, 100)
+		if err != nil {
+			log.Printf("Failed to load app logs for %s: %v", id, err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+		status, statusErr := h.appUseCase.GetAppStatus(r.Context(), id)
+		if statusErr != nil {
+			status = "unknown"
+		}
+
+		view := logsPaasToView(app, logsText, status)
 		h.executeView(w, "logs", view)
 		return
 	}
@@ -494,17 +796,155 @@ func (h *DashboardHandler) handleAppLogs(w http.ResponseWriter, r *http.Request,
 		ID:          container.ID,
 		Name:        container.Name,
 		LogsContent: logs.String(),
+		Status:      domain.NormalizeStoredStatus(container.Status),
 	}
 	h.executeView(w, "logs_container", view)
 }
 
 func (h *DashboardHandler) handleSettings(w http.ResponseWriter, r *http.Request) {
-	view := views.LayoutData{
-		Title:    "Docker Container Dashboard",
-		Subtitle: "Panel settings",
-		Active:   "/settings",
+	view := views.SettingsView{
+		LayoutData: views.LayoutData{
+			Title:    "Docker Container Dashboard",
+			Subtitle: "Panel settings",
+			Active:   "/settings",
+		},
+		FlashMessage: r.URL.Query().Get("msg"),
+		FlashError:   r.URL.Query().Get("err"),
+	}
+	if h.platformSettingsUseCase != nil {
+		settings, err := h.platformSettingsUseCase.GetPlatformSettings(r.Context())
+		if err != nil {
+			log.Printf("Failed to load platform settings: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+		if settings != nil {
+			view.CertbotEmail = settings.CertbotEmail
+			view.CertbotEnabled = settings.CertbotEnabled
+			view.CertbotStaging = settings.CertbotStaging
+			view.CertbotAutoRenew = settings.CertbotAutoRenew
+			view.CertbotTermsAccepted = settings.CertbotTermsAccepted
+		}
 	}
 	h.executeView(w, "settings", view)
+}
+
+func (h *DashboardHandler) handleSettingsPost(w http.ResponseWriter, r *http.Request) {
+	if h.platformSettingsUseCase == nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		redirectWithFlash(w, r, "/settings", "", "Invalid form submission")
+		return
+	}
+
+	settings := domain.PlatformSettings{
+		CertbotEmail:         r.FormValue("certbot_email"),
+		CertbotEnabled:       r.FormValue("certbot_enabled") == "on",
+		CertbotStaging:       r.FormValue("certbot_staging") == "on",
+		CertbotAutoRenew:     r.FormValue("certbot_auto_renew") == "on",
+		CertbotTermsAccepted: r.FormValue("certbot_terms") == "on",
+	}
+	if _, err := h.platformSettingsUseCase.UpdatePlatformSettings(r.Context(), settings); err != nil {
+		redirectWithFlash(w, r, "/settings", "", err.Error())
+		return
+	}
+
+	redirectWithFlash(w, r, "/settings", "Settings saved", "")
+}
+
+func (h *DashboardHandler) handleCertbotRenewPost(w http.ResponseWriter, r *http.Request) {
+	if h.certbotManager == nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := h.certbotManager.RenewCertificates(r.Context()); err != nil {
+		redirectWithFlash(w, r, "/settings", "", "Certificate renewal failed: "+err.Error())
+		return
+	}
+	if h.hostManager != nil {
+		if err := h.hostManager.ReloadRouting(r.Context()); err != nil {
+			redirectWithFlash(w, r, "/settings", "", "Certificate renewed, but nginx reload failed: "+err.Error())
+			return
+		}
+	}
+
+	redirectWithFlash(w, r, "/settings", "Certificate renewal completed", "")
+}
+
+func renderManagedEnv(env map[string]string) string {
+	if len(env) == 0 {
+		return ""
+	}
+
+	keys := make([]string, 0, len(env))
+	for key := range env {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	lines := make([]string, 0, len(keys))
+	for _, key := range keys {
+		lines = append(lines, key+"="+env[key])
+	}
+	return strings.Join(lines, "\n")
+}
+
+func parseManagedEnvString(text string) map[string]string {
+	values := map[string]string{}
+	lines := strings.Split(text, "\n")
+	for _, raw := range lines {
+		line := strings.TrimSpace(raw)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		separator := strings.Index(line, "=")
+		if separator <= 0 {
+			continue
+		}
+
+		key := strings.TrimSpace(line[:separator])
+		value := strings.TrimSpace(line[separator+1:])
+		if key == "" {
+			continue
+		}
+		values[key] = value
+	}
+	return values
+}
+
+func parseIntOr(raw string, fallback int) int {
+	value, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil {
+		return fallback
+	}
+	return value
+}
+
+func redirectWithFlash(w http.ResponseWriter, r *http.Request, path, message, flashErr string) {
+	values := url.Values{}
+	if message != "" {
+		values.Set("msg", message)
+	}
+	if flashErr != "" {
+		values.Set("err", flashErr)
+	}
+
+	target := path
+	if encoded := values.Encode(); encoded != "" {
+		target += "?" + encoded
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
+}
+
+func redirectBackOrDefault(w http.ResponseWriter, r *http.Request, fallback string) {
+	target := strings.TrimSpace(r.Referer())
+	if target == "" {
+		target = fallback
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
 // APIGetDashboard returns dashboard data as JSON

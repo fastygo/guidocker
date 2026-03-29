@@ -55,12 +55,37 @@ type AppDetailView struct {
 // AppDetailPaasView is for app detail page (App/Paas-based).
 type AppDetailPaasView struct {
 	LayoutData
-	ID        string
-	Name      string
-	Dir       string
-	PortsStr  string
-	Status    string
-	UpdatedAt string
+	ID              string
+	Name            string
+	Dir             string
+	PortsStr        string
+	Status          string
+	UpdatedAt       string
+	PublicDomain    string
+	ProxyTargetPort int
+	UseTLS          bool
+	ManagedEnvStr   string
+	FlashMessage    string
+	FlashError      string
+}
+
+// SettingsView is for the platform settings page.
+type SettingsView struct {
+	LayoutData
+	CertbotEmail         string
+	CertbotEnabled       bool
+	CertbotStaging       bool
+	CertbotAutoRenew     bool
+	CertbotTermsAccepted bool
+	FlashMessage         string
+	FlashError           string
+}
+
+// DeleteConfirmView is for the managed app delete confirmation screen.
+type DeleteConfirmView struct {
+	LayoutData
+	ID   string
+	Name string
 }
 
 // ComposeView is for compose edit page.
@@ -75,6 +100,11 @@ type ComposeView struct {
 	RepoBranch  string
 	ComposePath string
 	AppPort     int
+	RepoAutoDeploy bool
+	RepoMode       bool
+	IsExistingApp  bool
+	FlashMessage   string
+	FlashError     string
 	ActionLabel string
 	AppID       string
 	AppIDJS     template.JS
@@ -86,6 +116,7 @@ type LogsView struct {
 	ID          string
 	Name        string
 	LogsContent string
+	Status      string
 }
 
 type ScanSummary struct {
@@ -139,7 +170,9 @@ type OverviewView struct {
 // AppsView is for apps list page.
 type AppsView struct {
 	LayoutData
-	Items []AppListItem
+	Items        []AppListItem
+	FlashMessage string
+	FlashError   string
 }
 
 // Renderer loads and executes HTML templates.
@@ -177,6 +210,7 @@ func NewRenderer() (*Renderer, error) {
 		"apps":              "apps.html",
 		"app_detail":        "app_detail.html",
 		"app_detail_paas":   "app_detail_paas.html",
+		"app_delete_confirm": "app_delete_confirm.html",
 		"compose":           "compose.html",
 		"compose_container": "compose_container.html",
 		"logs":              "logs.html",

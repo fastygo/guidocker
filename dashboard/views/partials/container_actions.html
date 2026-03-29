@@ -2,18 +2,18 @@
 {{$id := .ID}}
 {{$status := .Status}}
 {{if eq $status "running"}}
-<button class="px-3 py-2 text-sm rounded border border-border bg-muted text-muted-foreground" onclick="updateContainerStatus('{{$id}}', 'stop')">Stop</button>
-<button class="px-3 py-2 text-sm rounded border border-border bg-muted text-muted-foreground" onclick="updateContainerStatus('{{$id}}', 'pause')">Pause</button>
-<button class="px-3 py-2 text-sm rounded border border-border bg-accent text-accent-foreground" onclick="updateContainerStatus('{{$id}}', 'restart')">Restart</button>
+<form method="POST" action="/apps/{{$id}}/stop" class="inline"><button type="submit" class="px-3 py-2 text-sm rounded border border-border bg-muted text-muted-foreground">Stop</button></form>
+<form method="POST" action="/apps/{{$id}}/pause" class="inline"><button type="submit" class="px-3 py-2 text-sm rounded border border-border bg-muted text-muted-foreground">Pause</button></form>
+<form method="POST" action="/apps/{{$id}}/restart" class="inline"><button type="submit" class="px-3 py-2 text-sm rounded border border-border bg-accent text-accent-foreground">Restart</button></form>
 {{end}}
 {{if eq $status "stopped"}}
-<button class="px-3 py-2 text-sm rounded border border-border bg-primary text-primary-foreground" onclick="updateContainerStatus('{{$id}}', 'start')">Start</button>
+<form method="POST" action="/apps/{{$id}}/start" class="inline"><button type="submit" class="px-3 py-2 text-sm rounded border border-border bg-primary text-primary-foreground">Start</button></form>
 {{end}}
 {{if eq $status "paused"}}
-<button class="px-3 py-2 text-sm rounded border border-border bg-accent text-accent-foreground" onclick="updateContainerStatus('{{$id}}', 'unpause')">Unpause</button>
-<button class="px-3 py-2 text-sm rounded border border-destructive bg-destructive text-destructive-foreground" onclick="updateContainerStatus('{{$id}}', 'stop')">Stop</button>
+<form method="POST" action="/apps/{{$id}}/unpause" class="inline"><button type="submit" class="px-3 py-2 text-sm rounded border border-border bg-accent text-accent-foreground">Unpause</button></form>
+<form method="POST" action="/apps/{{$id}}/stop" class="inline"><button type="submit" class="px-3 py-2 text-sm rounded border border-destructive bg-destructive text-destructive-foreground">Stop</button></form>
 {{end}}
 {{if and (ne $status "running") (ne $status "stopped") (ne $status "paused")}}
-<button class="px-3 py-2 text-sm rounded border border-border bg-primary text-primary-foreground" onclick="updateContainerStatus('{{$id}}', 'start')">Start</button>
+<form method="POST" action="/apps/{{$id}}/start" class="inline"><button type="submit" class="px-3 py-2 text-sm rounded border border-border bg-primary text-primary-foreground">Start</button></form>
 {{end}}
 {{end}}

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -294,6 +295,40 @@ func TestDashboardHandler_Dashboard_LogsScreen(t *testing.T) {
 	body := recorder.Body.String()
 	if !strings.Contains(body, "nginx-web logs") {
 		t.Fatalf("expected logs screen content")
+	}
+}
+
+func TestDashboardHandler_Dashboard_PaasLogsScreen_RendersServerSideLogs(t *testing.T) {
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{
+		getFn: func(_ context.Context, id string) (*domain.App, error) {
+			return &domain.App{ID: id, Name: "demo"}, nil
+		},
+		getLogsFn: func(_ context.Context, app *domain.App, lines int) (string, error) {
+			if app.ID != "app-1" || lines != 100 {
+				t.Fatalf("unexpected app/lines: %+v lines=%d", app, lines)
+			}
+			return "line-1\nline-2", nil
+		},
+		getStatusFn: func(_ context.Context, id string) (string, error) {
+			if id != "app-1" {
+				t.Fatalf("unexpected app id %q", id)
+			}
+			return domain.AppStatusRunning, nil
+		},
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/apps/app-1/logs", nil)
+	recorder := httptest.NewRecorder()
+
+	handler.Dashboard(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Result().StatusCode)
+	}
+	body := recorder.Body.String()
+	if !strings.Contains(body, "line-1") || !strings.Contains(body, "Status: running") {
+		t.Fatalf("expected server-side logs and status in body, got %q", body)
 	}
 }
 
@@ -973,5 +1008,457 @@ func TestDashboardHandler_APIAppConfig_MethodNotAllowed(t *testing.T) {
 
 	if recorder.Result().StatusCode != http.StatusMethodNotAllowed {
 		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, recorder.Result().StatusCode)
+	}
+}
+
+func TestDashboardHandler_AppConfigPost_Success(t *testing.T) {
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{
+		updateConfigFn: func(_ context.Context, id string, config domain.AppConfig) (*domain.App, error) {
+			if id != "app-1" {
+				t.Fatalf("expected app id app-1, got %q", id)
+			}
+			if config.PublicDomain != "landing.example.com" {
+				t.Fatalf("unexpected public domain %q", config.PublicDomain)
+			}
+			if config.ProxyTargetPort != 3000 {
+				t.Fatalf("unexpected proxy port %d", config.ProxyTargetPort)
+			}
+			if !config.UseTLS {
+				t.Fatalf("expected use_tls to be true")
+			}
+			if config.ManagedEnv["API_URL"] != "https://landing" || config.ManagedEnv["FOO"] != "bar" {
+				t.Fatalf("unexpected managed env: %#v", config.ManagedEnv)
+			}
+			return &domain.App{ID: id}, nil
+		},
+	})
+
+	form := url.Values{
+		"public_domain":     {"landing.example.com"},
+		"proxy_target_port": {"3000"},
+		"use_tls":           {"on"},
+		"managed_env":       {"API_URL=https://landing\nFOO=bar"},
+	}
+	request := httptest.NewRequest(http.MethodPost, "/apps/app-1/config", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	recorder := httptest.NewRecorder()
+
+	handler.handleAppRoutes(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected status %d, got %d", http.StatusSeeOther, recorder.Result().StatusCode)
+	}
+	if location := recorder.Result().Header.Get("Location"); location != "/apps/app-1?msg=App+settings+saved" {
+		t.Fatalf("unexpected redirect location %q", location)
+	}
+}
+
+func TestDashboardHandler_AppConfigPost_ValidationError(t *testing.T) {
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{
+		updateConfigFn: func(_ context.Context, _ string, _ domain.AppConfig) (*domain.App, error) {
+			return nil, domain.ErrInvalidDomain
+		},
+	})
+
+	form := url.Values{
+		"public_domain":     {"bad_domain"},
+		"proxy_target_port": {"8080"},
+	}
+	request := httptest.NewRequest(http.MethodPost, "/apps/app-1/config", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	recorder := httptest.NewRecorder()
+
+	handler.handleAppRoutes(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected status %d, got %d", http.StatusSeeOther, recorder.Result().StatusCode)
+	}
+	if location := recorder.Result().Header.Get("Location"); location != "/apps/app-1?err=invalid+domain" {
+		t.Fatalf("unexpected redirect location %q", location)
+	}
+}
+
+func TestDashboardHandler_SettingsPost_Success(t *testing.T) {
+	var saved domain.PlatformSettings
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetPlatformSettingsUseCase(&fakePlatformSettingsUseCase{
+		updateSettingsFn: func(_ context.Context, input domain.PlatformSettings) (*domain.PlatformSettings, error) {
+			saved = input
+			return &input, nil
+		},
+	})
+
+	form := url.Values{
+		"certbot_email":      {"ops@example.com"},
+		"certbot_enabled":    {"on"},
+		"certbot_auto_renew": {"on"},
+		"certbot_terms":      {"on"},
+	}
+	request := httptest.NewRequest(http.MethodPost, "/settings", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	recorder := httptest.NewRecorder()
+
+	handler.Dashboard(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected status %d, got %d", http.StatusSeeOther, recorder.Result().StatusCode)
+	}
+	if !saved.CertbotEnabled || !saved.CertbotAutoRenew || !saved.CertbotTermsAccepted || saved.CertbotEmail != "ops@example.com" {
+		t.Fatalf("unexpected saved settings: %+v", saved)
+	}
+	if location := recorder.Result().Header.Get("Location"); location != "/settings?msg=Settings+saved" {
+		t.Fatalf("unexpected redirect location %q", location)
+	}
+}
+
+func TestDashboardHandler_CertbotRenewPost_Success(t *testing.T) {
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	renewCalled := false
+	reloadCalled := false
+	handler.certbotManager = &fakeCertbotManager{
+		renewFn: func(_ context.Context) error {
+			renewCalled = true
+			return nil
+		},
+	}
+	handler.hostManager = &fakeHostManager{
+		reloadFn: func(_ context.Context) error {
+			reloadCalled = true
+			return nil
+		},
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/settings/renew", nil)
+	recorder := httptest.NewRecorder()
+
+	handler.Dashboard(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected status %d, got %d", http.StatusSeeOther, recorder.Result().StatusCode)
+	}
+	if !renewCalled || !reloadCalled {
+		t.Fatalf("expected renew and reload to be called, got renew=%v reload=%v", renewCalled, reloadCalled)
+	}
+	if location := recorder.Result().Header.Get("Location"); location != "/settings?msg=Certificate+renewal+completed" {
+		t.Fatalf("unexpected redirect location %q", location)
+	}
+}
+
+func TestDashboardHandler_CertbotRenewPost_Error(t *testing.T) {
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.certbotManager = &fakeCertbotManager{
+		renewFn: func(_ context.Context) error {
+			return errors.New("certbot boom")
+		},
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/settings/renew", nil)
+	recorder := httptest.NewRecorder()
+
+	handler.Dashboard(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected status %d, got %d", http.StatusSeeOther, recorder.Result().StatusCode)
+	}
+	if location := recorder.Result().Header.Get("Location"); location != "/settings?err=Certificate+renewal+failed%3A+certbot+boom" {
+		t.Fatalf("unexpected redirect location %q", location)
+	}
+}
+
+func TestDashboardHandler_AppDeployPost_Success(t *testing.T) {
+	deployedID := ""
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{
+		deployFn: func(_ context.Context, id string) error {
+			deployedID = id
+			return nil
+		},
+	})
+
+	request := httptest.NewRequest(http.MethodPost, "/apps/app-1/deploy", nil)
+	recorder := httptest.NewRecorder()
+
+	handler.handleAppRoutes(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected status %d, got %d", http.StatusSeeOther, recorder.Result().StatusCode)
+	}
+	if deployedID != "app-1" {
+		t.Fatalf("expected deploy for app-1, got %q", deployedID)
+	}
+	if location := recorder.Result().Header.Get("Location"); location != "/apps/app-1?msg=Application+deployed" {
+		t.Fatalf("unexpected redirect location %q", location)
+	}
+}
+
+func TestDashboardHandler_AppRestartPost_Success(t *testing.T) {
+	restartedID := ""
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{
+		restartFn: func(_ context.Context, id string) error {
+			restartedID = id
+			return nil
+		},
+	})
+
+	request := httptest.NewRequest(http.MethodPost, "/apps/app-1/restart", nil)
+	recorder := httptest.NewRecorder()
+
+	handler.handleAppRoutes(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected status %d, got %d", http.StatusSeeOther, recorder.Result().StatusCode)
+	}
+	if restartedID != "app-1" {
+		t.Fatalf("expected restart for app-1, got %q", restartedID)
+	}
+	if location := recorder.Result().Header.Get("Location"); location != "/apps/app-1?msg=Application+restarted" {
+		t.Fatalf("unexpected redirect location %q", location)
+	}
+}
+
+func TestDashboardHandler_AppStopPost_Success(t *testing.T) {
+	stoppedID := ""
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{
+		stopFn: func(_ context.Context, id string) error {
+			stoppedID = id
+			return nil
+		},
+	})
+
+	request := httptest.NewRequest(http.MethodPost, "/apps/app-1/stop", nil)
+	recorder := httptest.NewRecorder()
+
+	handler.handleAppRoutes(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected status %d, got %d", http.StatusSeeOther, recorder.Result().StatusCode)
+	}
+	if stoppedID != "app-1" {
+		t.Fatalf("expected stop for app-1, got %q", stoppedID)
+	}
+	if location := recorder.Result().Header.Get("Location"); location != "/apps/app-1?msg=Application+stopped" {
+		t.Fatalf("unexpected redirect location %q", location)
+	}
+}
+
+func TestDashboardHandler_AppDeletePost_Success(t *testing.T) {
+	deletedID := ""
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{
+		deleteFn: func(_ context.Context, id string) error {
+			deletedID = id
+			return nil
+		},
+	})
+
+	request := httptest.NewRequest(http.MethodPost, "/apps/app-1/delete", nil)
+	recorder := httptest.NewRecorder()
+
+	handler.handleAppRoutes(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected status %d, got %d", http.StatusSeeOther, recorder.Result().StatusCode)
+	}
+	if deletedID != "app-1" {
+		t.Fatalf("expected delete for app-1, got %q", deletedID)
+	}
+	if location := recorder.Result().Header.Get("Location"); location != "/apps?msg=Application+deleted" {
+		t.Fatalf("unexpected redirect location %q", location)
+	}
+}
+
+func TestDashboardHandler_AppDeleteConfirm_Get(t *testing.T) {
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{
+		getFn: func(_ context.Context, id string) (*domain.App, error) {
+			if id != "app-1" {
+				t.Fatalf("expected app id app-1, got %q", id)
+			}
+			return &domain.App{
+				ID:   "app-1",
+				Name: "demo",
+			}, nil
+		},
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/apps/app-1/delete", nil)
+	recorder := httptest.NewRecorder()
+
+	handler.handleAppRoutes(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Result().StatusCode)
+	}
+	body := recorder.Body.String()
+	if !strings.Contains(body, "Delete demo?") {
+		t.Fatalf("expected delete confirmation content, got %q", body)
+	}
+}
+
+func TestDashboardHandler_ContainerLifecyclePost_RedirectsBack(t *testing.T) {
+	updatedID := ""
+	updatedStatus := ""
+	handler := newTestHandler(&fakeDashboardUseCase{
+		updateFn: func(_ context.Context, id, status string) error {
+			updatedID = id
+			updatedStatus = status
+			return nil
+		},
+	})
+
+	request := httptest.NewRequest(http.MethodPost, "/apps/c1/pause", nil)
+	request.Header.Set("Referer", "/apps/c1")
+	recorder := httptest.NewRecorder()
+
+	handler.handleAppRoutes(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected status %d, got %d", http.StatusSeeOther, recorder.Result().StatusCode)
+	}
+	if updatedID != "c1" || updatedStatus != "pause" {
+		t.Fatalf("unexpected container update %q %q", updatedID, updatedStatus)
+	}
+	if location := recorder.Result().Header.Get("Location"); location != "/apps/c1" {
+		t.Fatalf("unexpected redirect location %q", location)
+	}
+}
+
+func TestDashboardHandler_ComposePost_CreateSave(t *testing.T) {
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{
+		createFn: func(_ context.Context, name, composeYAML string) (*domain.App, error) {
+			if name != "demo" {
+				t.Fatalf("unexpected name %q", name)
+			}
+			if !strings.Contains(composeYAML, "services:") {
+				t.Fatalf("unexpected compose yaml %q", composeYAML)
+			}
+			return &domain.App{ID: "app-1", Name: name, ComposeYAML: composeYAML}, nil
+		},
+	})
+
+	form := url.Values{
+		"mode":          {"compose"},
+		"name":          {"demo"},
+		"compose_yaml":  {"services:\n  web:\n    image: nginx:alpine"},
+		"submit_action": {"save"},
+	}
+	request := httptest.NewRequest(http.MethodPost, "/apps/new/compose", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	recorder := httptest.NewRecorder()
+
+	handler.handleAppRoutes(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected status %d, got %d", http.StatusSeeOther, recorder.Result().StatusCode)
+	}
+	if location := recorder.Result().Header.Get("Location"); location != "/apps/app-1/compose?msg=Compose+saved" {
+		t.Fatalf("unexpected redirect location %q", location)
+	}
+}
+
+func TestDashboardHandler_ComposePost_CreateDeploy(t *testing.T) {
+	deployedID := ""
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{
+		createFn: func(_ context.Context, name, composeYAML string) (*domain.App, error) {
+			return &domain.App{ID: "app-1", Name: name, ComposeYAML: composeYAML}, nil
+		},
+		deployFn: func(_ context.Context, id string) error {
+			deployedID = id
+			return nil
+		},
+	})
+
+	form := url.Values{
+		"mode":          {"compose"},
+		"name":          {"demo"},
+		"compose_yaml":  {"services:\n  web:\n    image: nginx:alpine"},
+		"submit_action": {"deploy"},
+	}
+	request := httptest.NewRequest(http.MethodPost, "/apps/new/compose", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	recorder := httptest.NewRecorder()
+
+	handler.handleAppRoutes(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected status %d, got %d", http.StatusSeeOther, recorder.Result().StatusCode)
+	}
+	if deployedID != "app-1" {
+		t.Fatalf("expected deploy for app-1, got %q", deployedID)
+	}
+	if location := recorder.Result().Header.Get("Location"); location != "/apps/app-1?msg=Application+deployed" {
+		t.Fatalf("unexpected redirect location %q", location)
+	}
+}
+
+func TestDashboardHandler_ComposePost_ImportSave(t *testing.T) {
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{
+		importFn: func(_ context.Context, input domain.ImportRepoInput) (*domain.App, error) {
+			if input.Name != "demo" || input.RepoURL != "https://github.com/example/demo.git" {
+				t.Fatalf("unexpected import input: %+v", input)
+			}
+			if input.AutoDeploy {
+				t.Fatalf("expected auto deploy to be false")
+			}
+			return &domain.App{ID: "app-1", Name: input.Name}, nil
+		},
+	})
+
+	form := url.Values{
+		"mode":              {"repo"},
+		"name":              {"demo"},
+		"repo_url":          {"https://github.com/example/demo.git"},
+		"repo_branch":       {"main"},
+		"repo_compose_path": {"docker-compose.yml"},
+		"repo_app_port":     {"7000"},
+		"submit_action":     {"save"},
+	}
+	request := httptest.NewRequest(http.MethodPost, "/apps/new/compose", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	recorder := httptest.NewRecorder()
+
+	handler.handleAppRoutes(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected status %d, got %d", http.StatusSeeOther, recorder.Result().StatusCode)
+	}
+	if location := recorder.Result().Header.Get("Location"); location != "/apps?msg=Application+imported" {
+		t.Fatalf("unexpected redirect location %q", location)
+	}
+}
+
+func TestDashboardHandler_ComposePost_RendersErrorWithFormValues(t *testing.T) {
+	handler := newTestHandler(&fakeDashboardUseCase{})
+	handler.SetAppUseCase(&fakeAppUseCase{
+		createFn: func(_ context.Context, _ string, _ string) (*domain.App, error) {
+			return nil, domain.ErrComposeNoServices
+		},
+	})
+
+	form := url.Values{
+		"mode":          {"compose"},
+		"name":          {"demo"},
+		"compose_yaml":  {"invalid"},
+		"submit_action": {"save"},
+	}
+	request := httptest.NewRequest(http.MethodPost, "/apps/new/compose", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	recorder := httptest.NewRecorder()
+
+	handler.handleAppRoutes(recorder, request)
+
+	if recorder.Result().StatusCode != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Result().StatusCode)
+	}
+	body := recorder.Body.String()
+	if !strings.Contains(body, "compose yaml must contain a &#39;services:&#39; key") || !strings.Contains(body, "value=\"demo\"") {
+		t.Fatalf("expected rendered error and preserved form values, got %q", body)
 	}
 }

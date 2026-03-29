@@ -5,30 +5,13 @@
 		<div class="text-2xl font-semibold">{{.Name}} logs</div>
 		<div class="text-sm text-muted-foreground">Recent runtime log output</div>
 	</div>
-	<div id="app-feedback" class="text-sm text-muted-foreground"></div>
+	<div class="text-sm text-muted-foreground">Status: {{.Status}}</div>
 	<div class="flex gap-2">
-		<button onclick="loadAppLogs()" class="px-3 py-2 rounded border border-border text-sm">Refresh</button>
+		<a href="/apps/{{.ID}}/logs" class="px-3 py-2 rounded border border-border text-sm">Refresh</a>
 		<a href="/apps/{{.ID}}/compose" class="px-3 py-2 rounded border border-border text-sm">Open compose</a>
 	</div>
 	<div class="rounded border border-border bg-card p-4 overflow-x-auto">
-		<pre id="app-logs-content" class="text-xs text-muted-foreground whitespace-pre-wrap">{{.LogsContent}}</pre>
+		<pre class="text-xs text-muted-foreground whitespace-pre-wrap">{{.LogsContent}}</pre>
 	</div>
 </section>
-<script>
-	async function loadAppLogs() {
-		const logsNode = document.getElementById('app-logs-content');
-		const feedback = document.getElementById('app-feedback');
-		if (feedback) feedback.textContent = 'Loading logs...';
-		const response = await fetch('/api/apps/' + encodeURIComponent('{{.ID}}') + '/logs?lines=100');
-		const payload = await response.json().catch(() => ({}));
-		if (!response.ok) {
-			if (logsNode) logsNode.textContent = payload.error || 'Failed to load logs';
-			if (feedback) feedback.textContent = 'Unable to fetch logs';
-			return;
-		}
-		if (logsNode) logsNode.textContent = payload.logs || 'No logs yet';
-		if (feedback) feedback.textContent = 'Status: ' + (payload.status || 'unknown');
-	}
-	document.addEventListener('DOMContentLoaded', loadAppLogs);
-</script>
 {{end}}

@@ -18,8 +18,8 @@
 				const icon = themeIcon();
 				if (!icon) return;
 				icon.src = root.classList.contains('dark')
-					? 'https://unpkg.com/lucide-static@latest/icons/sun.svg'
-					: 'https://unpkg.com/lucide-static@latest/icons/moon.svg';
+					? '/static/icons/sun.svg'
+					: '/static/icons/moon.svg';
 			};
 			root.classList.toggle('dark', shouldUseDark);
 			applyThemeIcon();
@@ -55,11 +55,11 @@
 		<div class="flex-1 min-w-0 flex flex-col">
 			<header class="h-15 flex items-center justify-between gap-2 border-b border-border px-4">
 				<button onclick="openMobileSidebar()" class="rounded border border-border px-2 py-1 md:hidden" aria-label="Open menu">
-					<img src="https://unpkg.com/lucide-static@latest/icons/menu.svg" alt="menu" class="h-4 w-4 dashboard-lucide-icon">
+					<img src="/static/icons/menu.svg" alt="menu" class="h-4 w-4 dashboard-lucide-icon">
 				</button>
 				<h1 class="text-base font-bold truncate flex-1 px-2">{{.Title}}</h1>
 				<button onclick="toggleDashboardTheme()" class="h-8 w-8 inline-flex items-center justify-center rounded border border-border" aria-label="Toggle theme">
-					<img id="theme-toggle-icon" src="https://unpkg.com/lucide-static@latest/icons/moon.svg" alt="Theme" class="h-4 w-4 dashboard-lucide-icon">
+					<img id="theme-toggle-icon" src="/static/icons/moon.svg" alt="Theme" class="h-4 w-4 dashboard-lucide-icon">
 				</button>
 			</header>
 			<main class="w-full max-w-full min-w-0 p-4 md:p-6">
@@ -105,17 +105,6 @@
 			const appFeedback = document.getElementById('app-feedback');
 			if (appFeedback) appFeedback.textContent = message;
 		};
-		async function updateContainerStatus(containerID, status) {
-			try {
-				const response = await fetch('/api/containers/' + encodeURIComponent(containerID), {
-					method: 'PUT',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ status }),
-				});
-				const data = await response.json();
-				if (data && data.success) location.reload();
-			} catch (err) { console.error('Action failed:', err); }
-		}
 	</script>
 </body>
 </html>

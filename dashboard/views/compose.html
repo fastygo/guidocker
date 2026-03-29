@@ -12,45 +12,47 @@
 			</div>
 
 			<div class="font-semibold">Compose pack</div>
-			<form id="compose-form" class="space-y-3">
+			<form id="compose-form" method="POST" action="/apps/{{if .AppID}}{{.AppID}}{{else}}new{{end}}/compose" class="space-y-3">
+				<input id="compose-mode-input" type="hidden" name="mode" value="{{if .RepoMode}}repo{{else}}compose{{end}}" />
 				<div>
 					<label class="text-sm text-muted-foreground">App name</label>
-					<input id="app-name" class="mt-1 w-full rounded border border-border bg-background px-2 py-2 text-sm" value="{{.Name}}" />
+					<input id="app-name" name="name" class="mt-1 w-full rounded border border-border bg-background px-2 py-2 text-sm" value="{{.Name}}" />
 				</div>
 
-				<div id="compose-mode">
+				<div id="compose-mode" class="{{if .RepoMode}}hidden{{end}}">
 					<label class="text-sm text-muted-foreground">Docker Compose YAML</label>
-					<textarea id="compose-yaml" class="mt-1 w-full rounded border border-border bg-background p-2 text-sm" rows="18">{{.ComposeYAML}}</textarea>
+					<textarea id="compose-yaml" name="compose_yaml" class="mt-1 w-full rounded border border-border bg-background p-2 text-sm" rows="18">{{.ComposeYAML}}</textarea>
 				</div>
 
-				<div id="repo-mode" class="space-y-3">
+				<div id="repo-mode" class="space-y-3 {{if not .RepoMode}}hidden{{end}}">
 					<div>
 						<label class="text-sm text-muted-foreground">Repository URL</label>
-						<input id="repo-url" type="text" class="mt-1 w-full rounded border border-border bg-background px-2 py-2 text-sm" value="{{.RepoURL}}" placeholder="https://github.com/owner/repository.git" />
+						<input id="repo-url" name="repo_url" type="text" class="mt-1 w-full rounded border border-border bg-background px-2 py-2 text-sm" value="{{.RepoURL}}" placeholder="https://github.com/owner/repository.git" />
 					</div>
 					<div>
 						<label class="text-sm text-muted-foreground">Branch</label>
-						<input id="repo-branch" type="text" class="mt-1 w-full rounded border border-border bg-background px-2 py-2 text-sm" value="{{.RepoBranch}}" placeholder="main" />
+						<input id="repo-branch" name="repo_branch" type="text" class="mt-1 w-full rounded border border-border bg-background px-2 py-2 text-sm" value="{{.RepoBranch}}" placeholder="main" />
 					</div>
 					<div>
 						<label class="text-sm text-muted-foreground">Compose file path (optional)</label>
-						<input id="repo-compose-path" type="text" class="mt-1 w-full rounded border border-border bg-background px-2 py-2 text-sm" value="{{.ComposePath}}" placeholder="docker-compose.yml or compose.yml" />
+						<input id="repo-compose-path" name="repo_compose_path" type="text" class="mt-1 w-full rounded border border-border bg-background px-2 py-2 text-sm" value="{{.ComposePath}}" placeholder="docker-compose.yml or compose.yml" />
 					</div>
 					<div>
 						<label class="text-sm text-muted-foreground">App port (required for Dockerfile fallback)</label>
-						<input id="repo-app-port" type="number" min="1" max="65535" class="mt-1 w-full rounded border border-border bg-background px-2 py-2 text-sm" value="{{.AppPort}}" placeholder="7000" />
+						<input id="repo-app-port" name="repo_app_port" type="number" min="1" max="65535" class="mt-1 w-full rounded border border-border bg-background px-2 py-2 text-sm" value="{{.AppPort}}" placeholder="7000" />
 						<div class="text-xs text-muted-foreground">If compose file is not provided, this value is mapped to generated Compose as HOST:CONTAINER.</div>
 					</div>
 					<label class="flex items-center gap-2 text-sm">
-						<input id="repo-auto-deploy" type="checkbox" checked />
+						<input id="repo-auto-deploy" name="repo_auto_deploy" type="checkbox" {{if .RepoAutoDeploy}}checked{{end}} />
 						<span>Deploy immediately after import</span>
 					</label>
+					{{if .IsExistingApp}}<div class="text-sm text-muted-foreground">Import mode updates existing applications are disabled. Switch to Compose YAML to edit and deploy this app.</div>{{end}}
 				</div>
 
-				<div id="compose-status" class="text-sm text-muted-foreground"></div>
+				{{if .FlashMessage}}<div id="compose-status" class="text-sm text-muted-foreground">{{.FlashMessage}}</div>{{else if .FlashError}}<div id="compose-status" class="text-sm text-destructive">{{.FlashError}}</div>{{else}}<div id="compose-status" class="text-sm text-muted-foreground"></div>{{end}}
 				<div class="flex flex-wrap gap-2">
-					<button type="button" class="px-3 py-2 rounded border border-border text-sm" onclick="saveCompose(false)">{{.ActionLabel}}</button>
-					<button type="button" class="px-3 py-2 rounded border border-border text-sm" onclick="saveCompose(true)">Deploy now</button>
+					<button id="compose-save-button" type="submit" name="submit_action" value="save" class="px-3 py-2 rounded border border-border text-sm">{{.ActionLabel}}</button>
+					<button id="compose-deploy-button" type="submit" name="submit_action" value="deploy" class="px-3 py-2 rounded border border-border text-sm">Deploy now</button>
 				</div>
 			</form>
 		</div>
@@ -65,13 +67,15 @@
 	</div>
 </section>
 <script>
-	const currentAppID = {{.AppIDJS}};
-	const initialMode = '{{if or (eq .SourceType "repo_compose") (eq .SourceType "repo_dockerfile")}}repo{{else}}compose{{end}}';
+	const initialMode = '{{if .RepoMode}}repo{{else}}compose{{end}}';
 	const composeModeNode = document.getElementById('compose-mode');
 	const repoModeNode = document.getElementById('repo-mode');
 	const composeTabNode = document.getElementById('tab-compose');
 	const repoTabNode = document.getElementById('tab-repo');
-	const statusNode = document.getElementById('compose-status');
+	const composeModeInput = document.getElementById('compose-mode-input');
+	const saveButtonNode = document.getElementById('compose-save-button');
+	const deployButtonNode = document.getElementById('compose-deploy-button');
+	const isExistingApp = {{if .IsExistingApp}}true{{else}}false{{end}};
 
 	function setMode(mode) {
 		const isRepo = mode === 'repo';
@@ -79,116 +83,10 @@
 		repoModeNode.classList.toggle('hidden', !isRepo);
 		composeTabNode.classList.toggle('bg-card', !isRepo);
 		repoTabNode.classList.toggle('bg-card', isRepo);
-	}
-
-	function toInt(value) {
-		const parsed = Number.parseInt(value, 10);
-		return Number.isFinite(parsed) ? parsed : 0;
-	}
-	function isReservedIngressPort(port) {
-		return port === 80 || port === 443;
-	}
-
-	async function saveCompose(shouldDeploy) {
-		if (statusNode) statusNode.textContent = shouldDeploy ? 'Saving and deploying...' : 'Saving...';
-		const appName = document.getElementById('app-name').value.trim();
-		const isRepoMode = !composeModeNode.classList.contains('hidden');
-		const composeActive = !composeModeNode.classList.contains('hidden');
-		const usingRepoMode = !composeActive;
-
-		if (appName === '') {
-			if (statusNode) statusNode.textContent = 'App name is required';
-			return;
-		}
-
-		if (usingRepoMode) {
-			const repoURL = document.getElementById('repo-url').value.trim();
-			const composePath = document.getElementById('repo-compose-path').value.trim();
-			const repoPort = toInt(document.getElementById('repo-app-port').value);
-			if (!repoURL) {
-				if (statusNode) statusNode.textContent = 'Repository URL is required';
-				return;
-			}
-			if (!composePath && repoPort <= 0) {
-				if (statusNode) statusNode.textContent = 'App port is required when compose path is not provided';
-				return;
-			}
-			if (!composePath && isReservedIngressPort(repoPort)) {
-				if (statusNode) statusNode.textContent = 'App port 80/443 is reserved for platform ingress';
-				return;
-			}
-		}
-
-		const endpoint = usingRepoMode
-			? '/api/apps/import'
-			: (currentAppID ? '/api/apps/' + encodeURIComponent(currentAppID) : '/api/apps');
-		const method = currentAppID ? 'PUT' : 'POST';
-		let body;
-		let requestInit;
-
-		if (usingRepoMode) {
-			body = {
-				name: appName,
-				repo_url: document.getElementById('repo-url').value.trim(),
-				branch: document.getElementById('repo-branch').value.trim(),
-				compose_path: document.getElementById('repo-compose-path').value.trim(),
-				app_port: toInt(document.getElementById('repo-app-port').value),
-				auto_deploy: (currentAppID ? false : (document.getElementById('repo-auto-deploy').checked || false))
-			};
-			requestInit = {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(body)
-			};
-		} else {
-			body = {
-				name: appName,
-				compose_yaml: document.getElementById('compose-yaml').value
-			};
-			requestInit = {
-				method,
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(body)
-			};
-		}
-
-		if (usingRepoMode && currentAppID) {
-			if (statusNode) statusNode.textContent = 'Import mode updates existing applications are disabled';
-			return;
-		}
-
-		const response = await fetch(endpoint, requestInit);
-		const appPayload = await response.json().catch(() => ({}));
-		if (!response.ok) {
-			if (statusNode) statusNode.textContent = appPayload.error || 'Save failed';
-			return;
-		}
-
-		if (!shouldDeploy) {
-			if (usingRepoMode && !currentAppID) {
-				window.location.href = '/apps';
-				return;
-			}
-			window.location.href = '/apps/' + encodeURIComponent(appPayload.id) + '/compose';
-			return;
-		}
-
-		const appID = appPayload.id || currentAppID;
-		if (!appID) {
-			if (statusNode) statusNode.textContent = 'App created but no ID was returned';
-			return;
-		}
-
-		if (!usingRepoMode && currentAppID) {
-			const deployResponse = await fetch('/api/apps/' + encodeURIComponent(appID) + '/deploy', { method: 'POST' });
-			const deployPayload = await deployResponse.json().catch(() => ({}));
-			if (!deployResponse.ok) {
-				if (statusNode) statusNode.textContent = deployPayload.error || 'Deploy failed';
-				return;
-			}
-		}
-
-		window.location.href = '/apps/' + encodeURIComponent(appID);
+		if (composeModeInput) composeModeInput.value = mode;
+		const disableSubmit = isExistingApp && isRepo;
+		if (saveButtonNode) saveButtonNode.disabled = disableSubmit;
+		if (deployButtonNode) deployButtonNode.disabled = disableSubmit;
 	}
 
 	setMode(initialMode);

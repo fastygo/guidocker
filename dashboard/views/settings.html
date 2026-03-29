@@ -7,20 +7,20 @@
 	<div class="grid gap-3 md:grid-cols-2">
 		<div class="rounded border border-border bg-card p-4">
 			<div class="font-semibold">Platform / Site TLS</div>
-			<div class="space-y-3">
+			<form method="POST" action="/settings" class="space-y-3">
 				<label class="block text-sm text-muted-foreground">Let's Encrypt email
-					<input id="certbot-email" class="mt-1 w-full rounded border border-border bg-background px-2 py-2 text-sm" placeholder="admin@example.com" />
+					<input id="certbot-email" name="certbot_email" value="{{.CertbotEmail}}" class="mt-1 w-full rounded border border-border bg-background px-2 py-2 text-sm" placeholder="admin@example.com" />
 				</label>
 				<label class="flex items-center gap-2 text-sm">
-					<input id="certbot-enabled" type="checkbox" />
+					<input id="certbot-enabled" name="certbot_enabled" type="checkbox" {{if .CertbotEnabled}}checked{{end}} />
 					<span>Enable certificate automation</span>
 				</label>
 				<label class="flex items-center gap-2 text-sm">
-					<input id="certbot-staging" type="checkbox" />
+					<input id="certbot-staging" name="certbot_staging" type="checkbox" {{if .CertbotStaging}}checked{{end}} />
 					<span>Use Let's Encrypt staging environment</span>
 				</label>
 				<label class="flex items-center gap-2 text-sm">
-					<input id="certbot-auto-renew" type="checkbox" checked />
+					<input id="certbot-auto-renew" name="certbot_auto_renew" type="checkbox" {{if .CertbotAutoRenew}}checked{{end}} />
 					<span>Enable automatic renewal</span>
 				</label>
 				<p class="text-xs text-muted-foreground mt-1">
@@ -28,14 +28,16 @@
 					If you disable automatic renewal, add a manual renewal schedule and keep host <code>nginx</code> reload enabled after renewal.
 				</p>
 				<label class="flex items-center gap-2 text-sm">
-					<input id="certbot-terms" type="checkbox" />
+					<input id="certbot-terms" name="certbot_terms" type="checkbox" {{if .CertbotTermsAccepted}}checked{{end}} />
 					<span>I accept Let's Encrypt terms of service</span>
 				</label>
-				<button type="button" class="px-3 py-2 rounded border border-border text-sm" onclick="savePlatformSettings()">Save platform settings</button>
-				<div id="admin-settings-feedback" class="text-sm text-muted-foreground"></div>
-				<button type="button" class="px-3 py-2 rounded border border-border text-sm" onclick="renewCertificates()">Run certificate renewal now</button>
-				<div id="certbot-renew-feedback" class="text-sm text-muted-foreground"></div>
-			</div>
+				<button type="submit" class="px-3 py-2 rounded border border-border text-sm">Save platform settings</button>
+			</form>
+			<form method="POST" action="/settings/renew" class="mt-3">
+				<button type="submit" class="px-3 py-2 rounded border border-border text-sm">Run certificate renewal now</button>
+			</form>
+			{{if .FlashMessage}}<div id="admin-settings-feedback" class="mt-3 text-sm text-muted-foreground">{{.FlashMessage}}</div>{{end}}
+			{{if .FlashError}}<div id="admin-settings-feedback" class="mt-3 text-sm text-destructive">{{.FlashError}}</div>{{end}}
 		</div>
 		<div class="rounded border border-border bg-card p-4">
 			<div class="font-semibold">Notes</div>
@@ -49,71 +51,4 @@
 		</div>
 	</div>
 </section>
-<script>
-	async function loadPlatformSettings() {
-		const response = await fetch('/api/settings', { method: 'GET' });
-		const payload = await response.json().catch(() => ({}));
-		if (!response.ok) {
-			console.warn('Failed to load platform settings', payload);
-			return;
-		}
-
-		const emailNode = document.getElementById('certbot-email');
-		const certbotEnabledNode = document.getElementById('certbot-enabled');
-		const certbotStagingNode = document.getElementById('certbot-staging');
-		const certbotAutoRenewNode = document.getElementById('certbot-auto-renew');
-		const certbotTermsNode = document.getElementById('certbot-terms');
-		if (emailNode) emailNode.value = payload.certbot_email || '';
-		if (certbotEnabledNode) certbotEnabledNode.checked = !!payload.certbot_enabled;
-		if (certbotStagingNode) certbotStagingNode.checked = !!payload.certbot_staging;
-		if (certbotAutoRenewNode) certbotAutoRenewNode.checked = payload.certbot_auto_renew !== false;
-		if (certbotTermsNode) certbotTermsNode.checked = !!payload.certbot_terms_accepted;
-	}
-
-	async function savePlatformSettings() {
-		const feedback = document.getElementById('admin-settings-feedback');
-		if (feedback) feedback.textContent = 'Saving settings...';
-
-		const emailNode = document.getElementById('certbot-email');
-		const certbotEnabledNode = document.getElementById('certbot-enabled');
-		const certbotStagingNode = document.getElementById('certbot-staging');
-		const certbotAutoRenewNode = document.getElementById('certbot-auto-renew');
-		const certbotTermsNode = document.getElementById('certbot-terms');
-		const payload = {
-			certbot_email: emailNode ? emailNode.value.trim() : '',
-			certbot_enabled: certbotEnabledNode ? !!certbotEnabledNode.checked : false,
-			certbot_staging: certbotStagingNode ? !!certbotStagingNode.checked : false,
-			certbot_auto_renew: certbotAutoRenewNode ? !!certbotAutoRenewNode.checked : false,
-			certbot_terms_accepted: certbotTermsNode ? !!certbotTermsNode.checked : false,
-		};
-
-		const response = await fetch('/api/settings', {
-			method: 'PUT',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(payload),
-		});
-		const body = await response.json().catch(() => ({}));
-		if (!response.ok) {
-			if (feedback) feedback.textContent = body.error || 'Failed to save settings';
-			return;
-		}
-		if (feedback) feedback.textContent = 'Settings saved';
-		await loadPlatformSettings();
-	}
-
-	async function renewCertificates() {
-		const feedback = document.getElementById('certbot-renew-feedback');
-		if (feedback) feedback.textContent = 'Running renewal...';
-
-		const response = await fetch('/api/certificates/renew', { method: 'POST' });
-		const body = await response.json().catch(() => ({}));
-		if (!response.ok) {
-			if (feedback) feedback.textContent = body.error || 'Certificate renewal failed';
-			return;
-		}
-		if (feedback) feedback.textContent = body.message || 'Certificate renewal completed';
-	}
-
-	document.addEventListener('DOMContentLoaded', loadPlatformSettings);
-</script>
 {{end}}
