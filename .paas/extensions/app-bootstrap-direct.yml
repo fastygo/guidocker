@@ -1,0 +1,251 @@
+id: app-bootstrap-direct
+name: Bootstrap App via Dashboard API
+description: Upload source via SSH, build an application image on the server without a registry, create the app through the dashboard API, optionally seed platform TLS settings, and deploy it
+
+inputs:
+  - name: app_name
+    label: Application name
+    type: text
+    required: true
+  - name: dashboard_url
+    label: Dashboard URL
+    type: text
+    required: true
+  - name: dashboard_user
+    label: Dashboard user
+    type: text
+    required: true
+  - name: dashboard_pass
+    label: Dashboard password
+    type: password
+    required: true
+  - name: public_domain
+    label: Public domain
+    type: text
+    default: ""
+  - name: proxy_target_port
+    label: Proxy target port
+    type: text
+    default: "80"
+  - name: use_tls
+    label: Use TLS
+    type: text
+    default: "false"
+  - name: certbot_email
+    label: Certbot email
+    type: text
+    default: ""
+  - name: certbot_staging
+    label: Use Let's Encrypt staging
+    type: text
+    default: "false"
+  - name: certbot_auto_renew
+    label: Enable automatic renewal
+    type: text
+    default: "true"
+  - name: tag
+    label: Override local image tag (leave empty for git SHA)
+    type: text
+    default: ""
+  - name: healthcheck_url
+    label: Healthcheck URL (leave empty to skip)
+    type: text
+    default: ""
+
+steps:
+  - id: prepare_git_sha
+    run: |
+      set -eu
+      git rev-parse --short=12 HEAD
+    capture: git_sha
+    description: "Get git SHA"
+    local: true
+
+  - id: prepare_image_tag
+    run: |
+      set -eu
+      if [ -n "${INPUT_TAG}" ]; then
+        echo "${INPUT_TAG}"
+      else
+        echo "sha-${STEP_GIT_SHA}"
+      fi
+    capture: image_tag
+    description: "Choose local image tag"
+    local: true
+
+  - id: prepare_image_ref
+    run: |
+      set -eu
+      echo "${INPUT_APP_NAME}"
+    capture: image_ref
+    description: "Build local image reference"
+    local: true
+
+  - id: upload_source
+    run: |
+      set -eu
+      git archive --format=tar HEAD | ssh ${SERVER_USER}@${SERVER_HOST} "mkdir -p /tmp/build-${INPUT_APP_NAME} && tar -xf - -C /tmp/build-${INPUT_APP_NAME}"
+    description: "Upload source to server"
+    local: true
+
+  - id: build_image
+    env:
+      PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    run: |
+      set -eu
+      cd /tmp/build-${INPUT_APP_NAME}
+      docker build \
+        -t "${STEP_IMAGE_REF}:${STEP_IMAGE_TAG}" \
+        -t "${STEP_IMAGE_REF}:main" \
+        .
+    description: "Build app image on server"
+
+  - id: render_compose
+    env:
+      PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    run: |
+      set -eu
+      cd /tmp/build-${INPUT_APP_NAME}
+      APP_IMAGE="${STEP_IMAGE_REF}:${STEP_IMAGE_TAG}" docker compose -f docker-compose.yml config > /tmp/rendered-compose.yml
+      echo "Rendered compose:"
+      head -20 /tmp/rendered-compose.yml
+    description: "Render compose YAML"
+
+  - id: verify_dashboard_api
+    env:
+      PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    run: |
+      set -eu
+      curl --fail --show-error --silent \
+        -u "${INPUT_DASHBOARD_USER}:${INPUT_DASHBOARD_PASS}" \
+        "${INPUT_DASHBOARD_URL}/api/health" >/dev/null
+    description: "Verify dashboard API"
+
+  - id: create_platform_settings_payload
+    env:
+      PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    run: |
+      set -eu
+      jq -n \
+        --arg certbot_email "${INPUT_CERTBOT_EMAIL}" \
+        --argjson certbot_enabled true \
+        --argjson certbot_staging "${INPUT_CERTBOT_STAGING}" \
+        --argjson certbot_auto_renew "${INPUT_CERTBOT_AUTO_RENEW}" \
+        --argjson certbot_terms_accepted true \
+        '{
+          certbot_email: $certbot_email,
+          certbot_enabled: $certbot_enabled,
+          certbot_staging: $certbot_staging,
+          certbot_auto_renew: $certbot_auto_renew,
+          certbot_terms_accepted: $certbot_terms_accepted
+        }' > /tmp/platform-settings.json
+    description: "Build platform TLS payload"
+    when: INPUT_CERTBOT_EMAIL != ""
+
+  - id: configure_platform_settings
+    env:
+      PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    run: |
+      set -eu
+      curl --fail --show-error --silent \
+        -u "${INPUT_DASHBOARD_USER}:${INPUT_DASHBOARD_PASS}" \
+        -X PUT "${INPUT_DASHBOARD_URL}/api/settings" \
+        -H 'Content-Type: application/json' \
+        --data @/tmp/platform-settings.json >/dev/null
+    description: "Seed platform TLS settings"
+    when: INPUT_CERTBOT_EMAIL != ""
+
+  - id: create_app_payload
+    env:
+      PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    run: |
+      set -eu
+      jq -n \
+        --arg name "${INPUT_APP_NAME}" \
+        --rawfile compose_yaml /tmp/rendered-compose.yml \
+        '{name: $name, compose_yaml: $compose_yaml}' > /tmp/create-app.json
+    description: "Build create-app payload"
+
+  - id: create_app
+    env:
+      PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    run: |
+      set -eu
+      curl --fail --show-error --silent \
+        -u "${INPUT_DASHBOARD_USER}:${INPUT_DASHBOARD_PASS}" \
+        -X POST "${INPUT_DASHBOARD_URL}/api/apps" \
+        -H 'Content-Type: application/json' \
+        --data @/tmp/create-app.json | jq -r '.id'
+    capture: app_id
+    description: "Create dashboard app"
+
+  - id: build_app_config_payload
+    env:
+      PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    run: |
+      set -eu
+      jq -n \
+        --arg public_domain "${INPUT_PUBLIC_DOMAIN}" \
+        --argjson proxy_target_port "${INPUT_PROXY_TARGET_PORT}" \
+        --argjson use_tls "${INPUT_USE_TLS}" \
+        '{
+          public_domain: $public_domain,
+          proxy_target_port: $proxy_target_port,
+          use_tls: $use_tls
+        }' > /tmp/app-config.json
+    description: "Build app routing payload"
+
+  - id: configure_app
+    env:
+      PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    run: |
+      set -eu
+      curl --fail --show-error --silent \
+        -u "${INPUT_DASHBOARD_USER}:${INPUT_DASHBOARD_PASS}" \
+        -X PUT "${INPUT_DASHBOARD_URL}/api/apps/${STEP_APP_ID}/config" \
+        -H 'Content-Type: application/json' \
+        --data @/tmp/app-config.json
+    description: "Configure app routing"
+
+  - id: trigger_deploy
+    env:
+      PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    run: |
+      set -eu
+      curl --fail --show-error --silent \
+        -u "${INPUT_DASHBOARD_USER}:${INPUT_DASHBOARD_PASS}" \
+        -X POST "${INPUT_DASHBOARD_URL}/api/apps/${STEP_APP_ID}/deploy"
+    description: "Trigger app deploy"
+
+  - id: print_app_id
+    run: |
+      set -eu
+      echo "Created APP_ID: ${STEP_APP_ID}"
+      echo "Dashboard API URL: ${INPUT_DASHBOARD_URL}"
+    description: "Print new app ID"
+    local: true
+
+  - id: cleanup
+    env:
+      PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    run: |
+      rm -rf /tmp/build-${INPUT_APP_NAME} /tmp/rendered-compose.yml /tmp/platform-settings.json /tmp/create-app.json /tmp/app-config.json
+    description: "Clean up build directory"
+    ignore_error: true
+
+  - id: smoke_test
+    run: |
+      set -eu
+      for attempt in 1 2 3 4 5 6; do
+        if curl --fail --show-error --silent "${INPUT_HEALTHCHECK_URL}"; then
+          echo ""
+          echo "Health check passed"
+          exit 0
+        fi
+        sleep 5
+      done
+      echo "Health check failed after 30s"
+      exit 1
+    description: "Smoke test"
+    local: true
+    when: INPUT_HEALTHCHECK_URL != ""

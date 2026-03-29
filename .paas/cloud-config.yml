@@ -1,0 +1,23 @@
+#cloud-config
+package_update: true
+package_upgrade: false
+
+packages:
+  - docker.io
+  - docker-compose-v2
+  - nginx
+  - certbot
+  - python3-certbot-nginx
+
+runcmd:
+  - systemctl enable docker
+  - systemctl start docker
+  - systemctl enable nginx
+  - systemctl start nginx
+  - mkdir -p /opt/stacks
+  - chmod 755 /opt/stacks
+  - docker --version
+  - docker compose version
+  - nginx -t
+  - certbot --version
+  - ls -ld /opt/stacks

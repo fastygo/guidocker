@@ -1,0 +1,40 @@
+server: production
+
+defaults:
+  # Application identity used by app-* flows.
+  INPUT_APP_NAME: my-app
+
+  # Required only for update flows:
+  #   bash ./.paas/run.sh app-deploy-direct
+  #   bash ./.paas/run.sh app-deploy
+  # Leave empty when you first create the app with app-bootstrap-direct.
+  INPUT_APP_ID: ""
+
+  # Internal dashboard controller.
+  INPUT_DASHBOARD_URL: http://127.0.0.1:7000
+  INPUT_DASHBOARD_USER: admin
+  INPUT_DASHBOARD_PASS: ""
+
+  # Managed app routing in the dashboard.
+  INPUT_PUBLIC_DOMAIN: "app.example.com"
+  INPUT_PROXY_TARGET_PORT: "8080"
+  INPUT_USE_TLS: "true"
+  INPUT_HEALTHCHECK_URL: "https://app.example.com/health"
+
+  # Registry-backed app-deploy flow.
+  INPUT_REGISTRY_HOST: <REGISTRY_HOST>
+  INPUT_IMAGE_REPOSITORY: myteam/my-app
+  INPUT_REGISTRY_USERNAME: ""
+  INPUT_REGISTRY_PASSWORD: ""
+
+  # Optional explicit tag override for app-* flows.
+  INPUT_TAG: ""
+
+  # Optional platform TLS seed values.
+  # These are mainly useful with app-bootstrap-direct when
+  # the dashboard still has no platform certbot settings yet.
+  INPUT_CERTBOT_EMAIL: ""
+  INPUT_CERTBOT_STAGING: "false"
+  INPUT_CERTBOT_AUTO_RENEW: "true"
+
+extensions_dir: .paas/extensions

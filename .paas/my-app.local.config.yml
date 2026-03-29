@@ -1,0 +1,26 @@
+server: production
+
+defaults:
+  # Application identity used by app-bootstrap-direct and app-deploy-direct.
+  INPUT_APP_NAME: my-app
+
+  # Required only for app-deploy-direct.
+  # Leave empty when you first create the app with app-bootstrap-direct.
+  INPUT_APP_ID: ""
+
+  # Internal dashboard controller.
+  INPUT_DASHBOARD_URL: http://127.0.0.1:7000
+  INPUT_DASHBOARD_USER: admin
+  INPUT_DASHBOARD_PASS: ""
+
+  # Direct local routing without public TLS.
+  # Set INPUT_PUBLIC_DOMAIN later if you want dashboard-managed ingress.
+  INPUT_PUBLIC_DOMAIN: ""
+  INPUT_PROXY_TARGET_PORT: "8080"
+  INPUT_USE_TLS: "false"
+  INPUT_HEALTHCHECK_URL: "http://127.0.0.1:8080/health"
+
+  # Optional explicit tag override for app-* direct flows.
+  INPUT_TAG: ""
+
+extensions_dir: .paas/extensions
