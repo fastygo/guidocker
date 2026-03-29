@@ -315,8 +315,6 @@ if [[ $# -gt 0 ]]; then
   echo "Additional paas args: $*"
 fi
 echo
-printf '%-28s %-22s %-18s %s\n' "Input" "Mapped name" "Source" "Value"
-printf '%-28s %-22s %-18s %s\n' "----------------------------" "----------------------" "------------------" "------------------------------"
 while IFS= read -r key; do
   [[ -z "${key}" ]] && continue
   source="${value_sources["${key}"]:-missing}"
@@ -330,9 +328,12 @@ while IFS= read -r key; do
   elif [[ "${extension_required["${key}"]:-false}" == "true" ]]; then
     display_value="<missing required>"
   fi
-  printf '%-28s %-22s %-18s %s\n' "${key}" "$(input_name_for_key "${key}")" "${source}" "${display_value}"
+  echo "Input:       ${key}"
+  echo "Mapped name: $(input_name_for_key "${key}")"
+  echo "Source:      ${source}"
+  echo "Value:       ${display_value}"
+  echo
 done < <(printf '%s\n' "${!summary_keys[@]}" | sort)
-echo
 
 if [[ "${#warnings[@]}" -gt 0 ]]; then
   echo "Warnings:"
