@@ -61,4 +61,24 @@
 		</div>
 	</div>
 </section>
+<script>
+	const appDetailDebugSnapshot = {{.DebugSnapshot}};
+
+	function readCurrentAppDetailFormState() {
+		const publicDomainNode = document.getElementById('app-public-domain');
+		const proxyTargetPortNode = document.getElementById('app-proxy-target-port');
+		const useTLSNode = document.getElementById('app-use-tls');
+		const managedEnvNode = document.getElementById('app-managed-env');
+
+		return {
+			public_domain: publicDomainNode ? publicDomainNode.value : '',
+			proxy_target_port: proxyTargetPortNode ? proxyTargetPortNode.value : '',
+			use_tls: useTLSNode ? useTLSNode.checked : false,
+			managed_env: managedEnvNode ? managedEnvNode.value : '',
+		};
+	}
+
+	console.log('appDetail.dbSnapshot', appDetailDebugSnapshot);
+	console.log('appDetail.domSnapshot', readCurrentAppDetailFormState());
+</script>
 {{end}}

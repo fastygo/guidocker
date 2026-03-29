@@ -121,6 +121,22 @@ steps:
         "${INPUT_DASHBOARD_URL}/api/health" >/dev/null
     description: "Verify dashboard API"
 
+  - id: describe_platform_settings_seed
+    run: |
+      set -eu
+      if [ -n "${INPUT_CERTBOT_EMAIL}" ]; then
+        echo "Platform settings seed: enabled"
+        echo "  certbot_email=${INPUT_CERTBOT_EMAIL}"
+        echo "  certbot_staging=${INPUT_CERTBOT_STAGING}"
+        echo "  certbot_auto_renew=${INPUT_CERTBOT_AUTO_RENEW}"
+      else
+        echo "Platform settings seed: skipped (INPUT_CERTBOT_EMAIL is empty)"
+        echo "  Note: app use_tls only expresses routing intent."
+        echo "  It does not create platform TLS settings by itself."
+      fi
+    description: "Describe platform settings seed"
+    local: true
+
   - id: create_platform_settings_payload
     env:
       PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -195,6 +211,21 @@ steps:
         }' > /tmp/app-config.json
     description: "Build app routing payload"
 
+  - id: describe_app_routing_intent
+    env:
+      PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    run: |
+      set -eu
+      echo "Requested app routing config:"
+      jq . /tmp/app-config.json
+      if [ "${INPUT_USE_TLS}" = "true" ]; then
+        echo "Requested HTTPS routing is enabled for this app."
+        echo "Platform TLS settings must already exist or be seeded during this bootstrap."
+      else
+        echo "Requested HTTPS routing is disabled for this app."
+      fi
+    description: "Describe requested routing config"
+
   - id: configure_app
     env:
       PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -206,6 +237,17 @@ steps:
         -H 'Content-Type: application/json' \
         --data @/tmp/app-config.json
     description: "Configure app routing"
+
+  - id: verify_app_config
+    env:
+      PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    run: |
+      set -eu
+      echo "Stored app config after bootstrap:"
+      curl --fail --show-error --silent \
+        -u "${INPUT_DASHBOARD_USER}:${INPUT_DASHBOARD_PASS}" \
+        "${INPUT_DASHBOARD_URL}/api/apps/${STEP_APP_ID}/config" | jq .
+    description: "Verify stored app config"
 
   - id: trigger_deploy
     env:

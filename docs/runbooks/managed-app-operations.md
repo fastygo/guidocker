@@ -19,11 +19,21 @@ bash ./.paas/run.sh app-bootstrap-direct --dry-run
 bash ./.paas/run.sh app-bootstrap-direct
 ```
 
+The runner preflight now shows the effective `INPUT_*` values before execution and asks for confirmation by default.
+
 Expected outcome:
 
 - a new dashboard app record is created,
 - routing is configured,
 - deployment is triggered.
+
+Operational notes:
+
+- bootstrap may seed platform settings only when `INPUT_CERTBOT_EMAIL` is resolved
+- the flow prints whether that seed is enabled or skipped
+- the flow prints the requested app routing payload before `PUT /api/apps/<id>/config`
+- the flow fetches and prints the stored app config after routing is applied
+- `use_tls=true` expresses app HTTPS intent, but platform TLS settings must still exist or be seeded during bootstrap
 
 ## Update An Existing Managed App
 
@@ -41,11 +51,29 @@ bash ./.paas/run.sh app-deploy-direct --dry-run
 bash ./.paas/run.sh app-deploy-direct
 ```
 
+The runner preflight makes missing `INPUT_APP_ID`, empty domains, and unexpected TLS intent visible before the deploy starts.
+
 Expected outcome:
 
 - the existing app record is updated,
 - routing is re-applied,
 - deployment is triggered.
+
+Operational notes:
+
+- `INPUT_APP_ID` is a hard prerequisite
+- this flow re-applies app routing but does not sync platform settings through `/api/settings`
+- the flow prints the requested routing payload before the config update
+- the flow fetches and prints the stored app config after routing is updated
+
+## Non-Interactive Execution
+
+Use these when automation should skip the confirmation prompt:
+
+```bash
+bash ./.paas/run.sh --yes app-bootstrap-direct --dry-run
+PAAS_ASSUME_YES=true bash ./.paas/run.sh app-deploy-direct --dry-run
+```
 
 ## Registry-Backed Update
 

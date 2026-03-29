@@ -139,11 +139,26 @@ Use the project wrapper on Windows / Git Bash and optionally on Linux/macOS:
 bash ./.paas/run.sh bootstrap-direct
 ```
 
+The wrapper now performs a preflight review before execution:
+
+- prints the resolved `INPUT_*` values that will be passed to `paas.exe`
+- shows whether each value came from exported env, `.paas/config.yml`, or an extension default
+- masks secrets such as dashboard and registry passwords
+- highlights required missing values before execution
+- asks for confirmation with `Continue deployment? [y/N]`
+
 The wrapper applies this priority:
 
 1. exported `INPUT_*` variables
 2. values from `.paas/config.yml`
 3. extension defaults
+
+Skip the confirmation prompt when needed for automation:
+
+```bash
+bash ./.paas/run.sh --yes app-bootstrap-direct --dry-run
+PAAS_ASSUME_YES=true bash ./.paas/run.sh app-deploy-direct --dry-run
+```
 
 ### One-shot `INPUT_*` overrides
 
@@ -178,6 +193,16 @@ bash ./.paas/run.sh app-deploy
 ```
 
 This works because `bash ./.paas/run.sh ...` reads exported or inline `INPUT_*` variables first, then falls back to `.paas/config.yml`.
+
+### What to look for in preflight
+
+The preflight is especially useful for catching:
+
+- `INPUT_PUBLIC_DOMAIN` resolving to `""`
+- `INPUT_USE_TLS=false` when HTTPS was expected
+- missing `INPUT_CERTBOT_EMAIL` during bootstrap
+- empty `INPUT_APP_ID` during `app-deploy-direct`
+- secrets being present without printing them in clear text
 
 Validate the extensions before the first real run:
 
@@ -300,6 +325,13 @@ What it does:
 6. applies routing through `PUT /api/apps/<id>/config`
 7. triggers deployment through `POST /api/apps/<id>/deploy`
 
+Operational notes:
+
+- this flow now prints whether platform settings seed is enabled or skipped
+- it prints the requested app routing payload before `PUT /api/apps/<id>/config`
+- it fetches and prints the stored app config after routing is applied
+- `use_tls=true` expresses app HTTPS intent, but platform TLS settings must still exist or be seeded during bootstrap
+
 ### `app-deploy-direct`
 
 Use this flow to update an existing dashboard app by rebuilding from source on the server.
@@ -324,6 +356,13 @@ What it does:
 4. updates the existing dashboard app through `PUT /api/apps/<id>`
 5. reapplies routing through `PUT /api/apps/<id>/config`
 6. triggers deployment through `POST /api/apps/<id>/deploy`
+
+Operational notes:
+
+- `INPUT_APP_ID` remains a hard prerequisite and is now surfaced clearly in runner preflight
+- this flow does not sync platform settings through `/api/settings`
+- it prints the requested routing payload before reapplying app config
+- it fetches and prints the stored app config after routing is updated
 
 ### `app-deploy`
 

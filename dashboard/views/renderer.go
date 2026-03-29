@@ -65,6 +65,7 @@ type AppDetailPaasView struct {
 	ProxyTargetPort int
 	UseTLS          bool
 	ManagedEnvStr   string
+	DebugSnapshot   template.JS
 	FlashMessage    string
 	FlashError      string
 }

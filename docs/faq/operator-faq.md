@@ -50,6 +50,33 @@ The `/settings` page reads persisted platform settings from BoltDB.
 
 `deploy-direct` does not update platform settings.
 
+For managed applications, the same seed-once idea applies:
+
+- `app-bootstrap-direct` may seed platform settings when `INPUT_CERTBOT_EMAIL` is present,
+- `app-deploy-direct` re-applies app routing and deploys the app, but does not sync `/api/settings`.
+
+## Why does the runner now ask for confirmation before deploy?
+
+The wrapper now prints the resolved `INPUT_*` values before execution so operators can confirm what will actually be sent to `paas.exe`.
+
+This helps catch mistakes such as:
+
+- empty `INPUT_PUBLIC_DOMAIN`,
+- unexpected `INPUT_USE_TLS=false`,
+- missing `INPUT_CERTBOT_EMAIL`,
+- missing `INPUT_APP_ID` during update flows.
+
+## Can I skip the confirmation prompt in automation?
+
+Yes.
+
+Use either:
+
+- `bash ./.paas/run.sh --yes <extension> ...`
+- `PAAS_ASSUME_YES=true bash ./.paas/run.sh <extension> ...`
+
+This preserves the preflight output while skipping the interactive `Y/N` prompt.
+
 ## What happens if I change settings in the GUI and then deploy again?
 
 It depends on the deployment flow.
@@ -64,6 +91,21 @@ Use the seed-once model:
 - `bootstrap-direct`: seed initial settings,
 - `deploy-direct`: do not touch settings,
 - GUI or API: own later runtime changes.
+
+For managed apps, the practical equivalent is:
+
+- use `app-bootstrap-direct` for first creation,
+- let it seed platform settings only when intended,
+- use `app-deploy-direct` for routine updates without overwriting platform settings.
+
+## How can I confirm what app config was actually stored?
+
+There are now several layers of visibility:
+
+- runner preflight shows the effective deploy inputs before execution,
+- app deploy flows print the requested routing payload,
+- app deploy flows fetch and print the stored app config after `PUT /api/apps/<id>/config`,
+- the app detail page can log a temporary browser console snapshot of DB-backed rendered values and current DOM field values.
 
 ## Can I change the dashboard port or hide the GUI without breaking apps?
 

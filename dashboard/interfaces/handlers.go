@@ -122,6 +122,20 @@ func containerComposeYAML(c *domain.Container) string {
 }
 
 func appDetailPaasToView(app *domain.App, flashMsg, flashErr string) views.AppDetailPaasView {
+	debugSnapshot := template.JS("{}")
+	if app != nil {
+		payload, err := json.Marshal(map[string]interface{}{
+			"id":                app.ID,
+			"public_domain":     app.PublicDomain,
+			"proxy_target_port": app.ProxyTargetPort,
+			"use_tls":           app.UseTLS,
+			"managed_env":       renderManagedEnv(app.ManagedEnv),
+		})
+		if err == nil {
+			debugSnapshot = template.JS(payload)
+		}
+	}
+
 	return views.AppDetailPaasView{
 		LayoutData: views.LayoutData{
 			Title:    "PaaS Dashboard",
@@ -138,6 +152,7 @@ func appDetailPaasToView(app *domain.App, flashMsg, flashErr string) views.AppDe
 		ProxyTargetPort: app.ProxyTargetPort,
 		UseTLS:          app.UseTLS,
 		ManagedEnvStr:   renderManagedEnv(app.ManagedEnv),
+		DebugSnapshot:   debugSnapshot,
 		FlashMessage:    flashMsg,
 		FlashError:      flashErr,
 	}
